@@ -7,33 +7,11 @@ Disciplined code, low-ceremony, opinionated. Setup writes your team's engineerin
 
 ## Install
 
-**Via the `skills` CLI (recommended for Claude Code users):**
-
 ```bash
-npx skills add CoRLab-Tech/rigorous
+npx skills add CoRLab-Tech/skills@rigorous
 ```
 
-Pin to a release:
-
-```bash
-npx skills add CoRLab-Tech/rigorous@v0.1.0
-```
-
-**Via npm from GitHub Packages:**
-
-```bash
-# One-time: tell npm where to find the scope
-echo "@corlab-tech:registry=https://npm.pkg.github.com" >> ~/.npmrc
-
-# Install
-npm install @corlab-tech/rigorous
-```
-
-**Via npm direct from GitHub (no registry config):**
-
-```bash
-npm install github:CoRLab-Tech/rigorous
-```
+Part of the [`CoRLab-Tech/skills`](https://github.com/CoRLab-Tech/skills) monorepo. Browse adjacent skills there.
 
 ## Use
 
