@@ -1,0 +1,25 @@
+---
+name: autonomous-loop
+description: "Autonomous loop that pulls one task from {{PROVIDER}}, implements it, tests via Playwright, and opens a GitHub PR — provider-neutral spec for {{PROJECT_NAME}}"
+metadata:
+  node_type: memory
+  type: project
+---
+
+There is a recurring autonomous loop set up for `{{PROJECT_NAME}}` using `{{PROVIDER}}` as the task tracker. On each tick it must:
+
+1. Query `{{PROVIDER}}` for the next issue in **state `{{READY_STATUS}}`** for project `{{PROJECT_NAME}}`. Take ONE issue at a time, ordered by priority then `updatedAt`. **Skip backlog / in-progress / in-review / done** — only the explicit `{{READY_STATUS}}` status is actionable. See [[feedback-only-ready-not-backlog]].
+2. Move the issue to **"In Progress"** in `{{PROVIDER}}`.
+3. Determine which service / subdirectory the issue belongs to (from labels, description, or title). For monorepos where each subfolder is its own git repo, `cd` into that folder. If the target is ambiguous, post a clarifying comment on the issue and move on to the next one.
+4. Create a feature branch named `feature/<issue-id>-<slug>` cut from a freshly-updated `origin/main` of the target repo. See [[feedback-pull-main-each-task]] — never branch from the currently checked-out (possibly stale) local branch.
+5. Implement the change. Follow `CLAUDE.md` conventions and every feedback memory in `MEMORY.md`.
+6. Verify with **Playwright MCP** — mandatory per [[feedback-playwright-testing]] whenever the change touches a UI surface. No PR without browser verification (or an explicit "no UI surface" note).
+7. Run the full test suite locally ([[feedback-run-tests-locally]], [[feedback-run-full-test-suite]]), then commit and push. **NEVER** include AI co-author attribution — per [[feedback-no-ai-attribution]].
+8. Open a GitHub PR via `gh pr create` **fully autonomously** (no confirmation prompt) with a clean human-style title/body. Link the `{{PROVIDER}}` issue. Attach visual evidence per [[feedback-pr-visual-evidence]] (and [[feedback-private-repo-screenshots]] for private repos). Invoke the `review` skill on the new PR per [[feedback-run-code-review]].
+9. Move the `{{PROVIDER}}` issue to **`{{REVIEW_STATUS}}`** and post the PR URL as a comment.
+10. Cadence: **self-paced** — after finishing one task, immediately check `{{PROVIDER}}` for the next; if none, sleep ~1200s before re-checking.
+11. If user corrections arrive mid-run, save them as feedback memories — per [[feedback-save-corrections]] — and apply on the very next iteration.
+
+**Why:** Hands-off task resolution for `{{PROJECT_NAME}}`: `{{PROVIDER}}` is the queue, GitHub is the output, Playwright is the gate.
+
+**How to apply:** This is the spec for the `/loop` invocation running on this project. Re-read this and `MEMORY.md` on every tick before doing anything else.
