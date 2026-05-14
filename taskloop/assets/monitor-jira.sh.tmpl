@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Jira Cloud ready-queue poller for taskloop.
+# Emits one stdout block per change in the configured ready queue so the
+# harness's Monitor tool wakes Claude on every delta.
+#
+# Placeholders substituted at init time:
+#   {{ENV_FILE}}   -> $MEM/.env
+#   {{STATE_FILE}} -> $MEM/.monitor-state
+#
+# Override polling cadence with: INTERVAL=30 ./monitor.sh
+
+set -o pipefail
+
+ENV_FILE="{{ENV_FILE}}"
+STATE_FILE="{{STATE_FILE}}"
+INTERVAL="${INTERVAL:-60}"
+
+if [ ! -f "$ENV_FILE" ]; then
+  echo "[monitor] error: env file not found at $ENV_FILE" >&2
+  exit 1
+fi
+
+while true; do
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
+
+  MISSING=""
+  for v in JIRA_HOST JIRA_EMAIL JIRA_API_TOKEN JIRA_PROJECT_KEY JIRA_READY_STATUS; do
+    if [ -z "$(eval echo \${$v:-})" ]; then
+      MISSING="$MISSING $v"
+    fi
+  done
+  if [ -n "$MISSING" ]; then
+    echo "[monitor] error: missing env var(s):$MISSING"
+    sleep "$INTERVAL"
+    continue
+  fi
+
+  JQL="project=$JIRA_PROJECT_KEY AND status=\"$JIRA_READY_STATUS\" ORDER BY updated DESC"
+
+  RESPONSE=$(curl -sS -G \
+    -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+    -H "Accept: application/json" \
+    --max-time 30 \
+    --data-urlencode "jql=$JQL" \
+    --data-urlencode "fields=summary,status,priority,updated" \
+    --data-urlencode "maxResults=25" \
+    "https://$JIRA_HOST/rest/api/3/search" 2>/dev/null || true)
+
+  if [ -z "$RESPONSE" ]; then
+    sleep "$INTERVAL"
+    continue
+  fi
+
+  SIG=$(printf '%s' "$RESPONSE" \
+    | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    issues = data.get("issues", [])
+except Exception:
+    sys.exit(0)
+for it in issues:
+    f = it.get("fields", {})
+    status = (f.get("status") or {}).get("name", "")
+    updated = f.get("updated", "")
+    title = f.get("summary", "")
+    print(f"{it.get(\"key\",\"\")}|{status}|{updated}|{title}")
+' 2>/dev/null | sort || true)
+
+  PREV=""
+  if [ -f "$STATE_FILE" ]; then
+    PREV=$(cat "$STATE_FILE")
+  fi
+
+  if [ "$SIG" != "$PREV" ]; then
+    COUNT=$(printf '%s' "$SIG" | grep -c . || true)
+    echo "[monitor] queue changed: ${COUNT} actionable issue(s)"
+    printf '%s\n' "$SIG" | head -n 5 | while IFS='|' read -r ID STATUS UPDATED TITLE; do
+      [ -z "$ID" ] && continue
+      printf '[monitor]  %s\t%s\t%s\t%s\n' "$ID" "$STATUS" "$UPDATED" "$TITLE"
+    done
+    printf '%s' "$SIG" > "$STATE_FILE"
+  fi
+
+  sleep "$INTERVAL"
+done

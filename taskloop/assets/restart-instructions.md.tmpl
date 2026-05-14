@@ -1,0 +1,57 @@
+---
+name: restart-instructions
+description: "How to resurrect the autonomous {{PROJECT_NAME}} task loop + {{PROVIDER}} Monitor when the user says \"start\" in this working directory"
+metadata:
+  node_type: memory
+  type: reference
+---
+
+When the user types **"start"** (or any equivalent like "porneste", "pornește bucla", "resume loop", "start monitor") while the working directory is the `{{PROJECT_NAME}}` repo, do all of the following in order, **without asking further questions** (the setup is already approved at `init` time):
+
+## 1. Re-arm the {{PROVIDER}} Monitor
+
+The polling script and env file already exist under `~/.claude/projects/<slug>/memory/`:
+
+- Script: `<MEM>/monitor.sh`
+- Env: `<MEM>/.env` (chmod 600)
+- State file: `<MEM>/.monitor-state` — **delete it before re-arming** so the first tick re-emits the current queue.
+
+Steps:
+
+1. `rm -f <MEM>/.monitor-state`
+2. Call the **Monitor** tool with:
+   - `command`: `<MEM>/monitor.sh`
+   - `description`: `{{PROJECT_NAME}} {{READY_STATUS}} queue (new/changed actionable issues)`
+   - `persistent`: `true`
+   - `timeout_ms`: `3600000`
+3. Note the returned `task_id`; that's the wake signal for the loop.
+
+If an old Monitor for the same script is still running, `TaskStop` it first.
+
+## 2. Verify the {{PROVIDER}} queue once
+
+Run one curl against `{{PROVIDER}}`'s API to check whether anything is already in `{{READY_STATUS}}` — the Monitor needs ~60s for its first tick. Use the "Verify queue" recipe from the provider doc. Do **not** include backlog items (per [[feedback-only-ready-not-backlog]]).
+
+If an issue is returned, **start processing it immediately** following the spec in [[autonomous-loop]]. If empty, just confirm "Monitor pornit, coadă goală, aștept evenimente" (or English equivalent) and continue to step 3.
+
+## 3. Arm the dynamic /loop safety net
+
+Call **ScheduleWakeup** with:
+
+- `delaySeconds`: `1500` (25 min fallback heartbeat; Monitor is the primary wake signal)
+- `reason`: short one-liner like `"Monitor primary wake; 25-min safety heartbeat"`
+- `prompt` (verbatim, exactly this string — prefix with `/loop `):
+
+  ```
+  /loop Run one iteration of the autonomous {{PROJECT_NAME}} task loop as specified in memory file autonomous-loop.md: pull the next open issue from the {{PROVIDER}} project in state {{READY_STATUS}}, identify the target service subdirectory, branch from fresh origin/main, implement, verify with Playwright MCP, run the full local test suite, push, open a GitHub PR fully autonomously with no AI attribution, run /review on it, then move the {{PROVIDER}} issue to {{REVIEW_STATUS}} and post the PR URL. Re-read MEMORY.md every tick and apply every feedback rule. Self-pace: if no open task is available, sleep ~1200s before checking again.
+  ```
+
+## 4. Pre-flight checks before "go"
+
+Re-read `MEMORY.md` first to refresh every feedback rule (no AI attribution, run tests locally, screenshots in PR branch for private repos, pull main each task, run `/review` after every PR, persist new corrections, only ready not backlog, etc.).
+
+## Background context (do not re-prompt the user)
+
+- Loop spec: see [[autonomous-loop]].
+- The user has explicitly authorized fully autonomous PR creation (no confirmation gate).
+- If the user says "stop" / "opreste" / "kill loop", call `TaskStop` on the Monitor task id and DO NOT call `ScheduleWakeup`.
