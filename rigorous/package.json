@@ -1,7 +1,7 @@
 {
   "name": "@corlab-tech/rigorous",
   "version": "0.1.0",
-  "description": "Engineering counterpart of impeccable. One skill, 13 commands, 3 standards files. Disciplined code, low-ceremony, opinionated.",
+  "description": "Engineering counterpart of impeccable. One skill, 14 commands, 3 standards files. Disciplined code, low-ceremony, opinionated.",
   "keywords": [
     "claude",
     "claude-code",
@@ -29,6 +29,7 @@
     "README.md",
     "LICENSE",
     "reference",
-    "scripts"
+    "scripts",
+    "templates"
   ]
 }
