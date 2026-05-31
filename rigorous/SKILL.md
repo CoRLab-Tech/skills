@@ -106,7 +106,7 @@ Rework until it reads like a deliberate human authored it.
 |---|---|---|---|
 | `teach` | Setup | Interactive setup of PRINCIPLES.md / STACK.md / TESTING.md | [reference/teach.md](reference/teach.md) |
 | `document` | Setup | Reverse-engineer the three context files from existing code | [reference/document.md](reference/document.md) |
-| `from-trd [trd-path]` | Setup | Transform a binding spec (TRD / SoW / RFP / caiet de sarcini) into the team's actionable engineering canon: posture docs, per-requirement shapes, meta-docs generators, enforcement hooks. Multi-phase orchestration (~8 sequential PRs). | [reference/from-trd.md](reference/from-trd.md) |
+| `from-trd [trd-path]` | Setup | Transform a binding spec (TRD / SoW / RFP / caiet de sarcini) into the team's actionable engineering canon: posture docs, per-requirement shapes, meta-docs generators, enforcement hooks. Brownfield (reconcile drifted code/docs) or greenfield (stand a new project up from zero). Multi-phase orchestration. | [reference/from-trd.md](reference/from-trd.md) |
 | `shape [feature]` | Build | Plan a feature before writing code | [reference/shape.md](reference/shape.md) |
 | `craft [feature]` | Build | Implement a feature end-to-end after shape is approved | [reference/craft.md](reference/craft.md) |
 | `tdd [feature]` | Build | Strict red-green-refactor cycle | [reference/tdd.md](reference/tdd.md) |
@@ -131,7 +131,7 @@ Setup (context gathering) is already loaded by then; sub-commands don't re-invok
 
 If the first word is `craft` or `tdd`, setup runs first, but those reference files own the rest of the flow. If setup invokes `teach` as a blocker, finish teach, refresh context, then resume the original command and target.
 
-`from-trd` is a session-spanning orchestration (multiple PRs, multi-agent audit, configurable per-project via `.rigorous/trd-config.yml`). Treat it like a one-shot project bootstrap, not a quick command. See `reference/from-trd.md` for the full phase plan and cost expectations.
+`from-trd` is a session-spanning orchestration (multiple PRs, configurable per-project via `.rigorous/trd-config.yml`). In brownfield mode it runs a multi-agent contradiction audit; in greenfield mode (new project + spec) it skips the audit and bootstraps the canon from zero. Treat it like a one-shot project bootstrap, not a quick command. See `reference/from-trd.md` for the full phase plan, mode detection, and cost expectations.
 
 ## Pin / Unpin
 
