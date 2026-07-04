@@ -34,22 +34,33 @@ const fs = require("fs");
 const { execFileSync } = require("child_process");
 let reg;
 try { reg = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch (e) { process.exit(0); }
+// Previous per-PR lines: a transient gh failure must NOT emit a false delta (FETCH_ERROR then a
+// flip-back). On error we carry the PR'\''s previous line forward — no delta, no noise. A PR with no
+// previous line and a failing fetch is simply omitted until the first successful read.
+let prev = new Map();
+try {
+  for (const l of fs.readFileSync(process.argv[2], "utf8").split("\n")) {
+    const key = l.split("|")[0];
+    if (key) prev.set(key, l);
+  }
+} catch (e) { /* no state yet */ }
 const prs = (reg && reg.prs) || [];
 const lines = [];
 for (const pr of prs) {
   if (!pr || !pr.repo || !pr.number) continue;
+  const key = `${pr.repo}#${pr.number}`;
   try {
     const out = execFileSync("gh", ["pr", "view", String(pr.number), "--repo", pr.repo,
       "--json", "state,mergedAt,comments,reviews,statusCheckRollup"], { encoding: "utf8", timeout: 30000 });
     const j = JSON.parse(out);
     const ci = (j.statusCheckRollup || []).map(c => `${c.name || c.context || "?"}:${c.conclusion || c.state || "pending"}`).sort().join(",");
-    lines.push(`${pr.repo}#${pr.number}|${pr.issue || ""}|${j.state}|${j.mergedAt || ""}|c${(j.comments || []).length}|r${(j.reviews || []).length}|${ci}`);
+    lines.push(`${key}|${pr.issue || ""}|${j.state}|${j.mergedAt || ""}|c${(j.comments || []).length}|r${(j.reviews || []).length}|${ci}`);
   } catch (e) {
-    lines.push(`${pr.repo}#${pr.number}|${pr.issue || ""}|FETCH_ERROR`);
+    if (prev.has(key)) lines.push(prev.get(key)); // transient failure → carry forward, no delta
   }
 }
 process.stdout.write(lines.sort().join("\n"));
-' "$REGISTRY_FILE" 2>/dev/null || true)
+' "$REGISTRY_FILE" "$STATE_FILE" 2>/dev/null || true)
 
   PREV=""
   [ -f "$STATE_FILE" ] && PREV=$(cat "$STATE_FILE")
