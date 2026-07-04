@@ -64,30 +64,27 @@ while true; do
   # Build a stable signature: sorted "key|status|updatedAt|title" lines, keeping
   # only work items whose expanded state name matches the ready status.
   SIG=$(printf '%s' "$RESPONSE" \
-    | READY="$PLANE_READY_STATUS" IDENT="${PLANE_PROJECT_IDENTIFIER:-}" python3 -c '
-import json, os, sys
-ready = os.environ.get("READY", "Todo")
-ident = os.environ.get("IDENT", "")
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    sys.exit(0)
-# Public list is cursor-paginated: work items live under "results".
-results = data.get("results", data) if isinstance(data, dict) else data
-if not isinstance(results, list):
-    sys.exit(0)
-for it in results:
-    st = it.get("state") or {}
-    name = st.get("name", "") if isinstance(st, dict) else ""
-    if name != ready:
-        continue
-    # Pre-extract into plain vars: f-string braces must hold no quotes/backslashes
-    # (Python 3.9 rejects backslashes inside f-string expressions).
-    seq = str(it.get("sequence_id", ""))
-    upd = it.get("updated_at", "")
-    title = it.get("name", "")
-    key = f"{ident}-{seq}" if ident else seq
-    print(f"{key}|{name}|{upd}|{title}")
+    | READY="$PLANE_READY_STATUS" IDENT="${PLANE_PROJECT_IDENTIFIER:-}" node -e '
+let buf = "";
+process.stdin.on("data", (c) => (buf += c)).on("end", () => {
+  const ready = process.env.READY || "Todo";
+  const ident = process.env.IDENT || "";
+  let data;
+  try { data = JSON.parse(buf); } catch (e) { process.exit(0); }
+  // Public list is cursor-paginated: work items live under "results".
+  const results = Array.isArray(data) ? data : (data && data.results) || [];
+  if (!Array.isArray(results)) process.exit(0);
+  for (const it of results) {
+    const st = (it && it.state) || {};
+    const name = (st && st.name) || "";
+    if (name !== ready) continue;
+    const seq = it.sequence_id == null ? "" : String(it.sequence_id);
+    const upd = it.updated_at || "";
+    const title = it.name || "";
+    const key = ident ? ident + "-" + seq : seq;
+    console.log(key + "|" + name + "|" + upd + "|" + title);
+  }
+});
 ' 2>/dev/null | sort || true)
 
   PREV=""
