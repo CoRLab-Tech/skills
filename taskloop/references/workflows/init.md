@@ -126,6 +126,18 @@ Then `chmod 600 "$MEM/.env"`.
 
 Render the provider's `assets/monitor-<provider>.sh.tmpl` by substituting `{{ENV_FILE}}` → `$MEM/.env` and `{{STATE_FILE}}` → `$MEM/.monitor-state`. Write to `$MEM/monitor.sh`, then `chmod +x`.
 
+### `monitor-prs.sh` (the loop's own eyes on its PRs)
+
+Render `assets/monitor-github-prs.sh.tmpl` substituting `{{REGISTRY_FILE}}` → `$MEM/.pr-feedback-state` and `{{STATE_FILE}}` → `$MEM/.pr-monitor-state`. Write to `$MEM/monitor-prs.sh`, `chmod +x`. This watcher makes the loop **independent**: it detects MERGED / CLOSED / new-comments / CI changes on its own PRs by itself — the owner never has to announce a merge in chat; all owner communication flows through PR comments and tracker comments.
+
+### Repo setting — auto-delete merged branches
+
+Enable head-branch auto-delete on every target repo (confirm with the user once):
+
+```bash
+gh api -X PATCH repos/<owner>/<repo> -f delete_branch_on_merge=true
+```
+
 ### `MEMORY.md`
 
 Render `assets/MEMORY.md.tmpl` substituting project metadata. The index points to:

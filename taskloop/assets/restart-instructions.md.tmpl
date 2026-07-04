@@ -18,13 +18,20 @@ The polling script and env file already exist under `~/.claude/projects/<slug>/m
 
 Steps:
 
-1. `rm -f <MEM>/.monitor-state`
+1. `rm -f <MEM>/.monitor-state <MEM>/.pr-monitor-state`
 2. Call the **Monitor** tool with:
    - `command`: `<MEM>/monitor.sh`
    - `description`: `{{PROJECT_NAME}} {{READY_STATUS}} queue (new/changed actionable issues)`
    - `persistent`: `true`
    - `timeout_ms`: `3600000`
-3. Note the returned `task_id`; that's the wake signal for the loop.
+3. Call **Monitor** again for the PR watcher:
+   - `command`: `<MEM>/monitor-prs.sh`
+   - `description`: `{{PROJECT_NAME}} loop-owned PRs (merge/close/comments/CI)`
+   - `persistent`: `true`
+   - `timeout_ms`: `3600000`
+
+   The loop is an **independent instrument** — it sees merges/comments/CI by itself and self-triggers the next task; the owner communicates ONLY via PR + tracker comments, never chat pings.
+4. Note both returned `task_id`s; they are the wake signals for the loop.
 
 If an old Monitor for the same script is still running, `TaskStop` it first.
 

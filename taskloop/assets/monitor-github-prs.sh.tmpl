@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# GitHub PR watcher for taskloop — the loop's OWN eyes on its open PRs.
+# Polls every PR in the registry ({{REGISTRY_FILE}}) via `gh` and emits one stdout
+# block per delta, so the harness's Monitor tool wakes Claude the moment a PR is
+# MERGED / CLOSED, gets new comments/reviews, or its CI rollup changes.
+#
+# WHY THIS EXISTS: the loop must NEVER depend on the owner saying "merged" — the
+# owner merges on GitHub and the loop reacts on its own (ticket → Merged state,
+# registry cleanup, branch hygiene, pull the next task).
+#
+# Placeholders substituted at init time:
+#   {{REGISTRY_FILE}} -> $MEM/.pr-feedback-state   (JSON: {"prs":[{repo,number,issue,branch},...]})
+#   {{STATE_FILE}}    -> $MEM/.pr-monitor-state
+#
+# Override polling cadence with: INTERVAL=30 ./monitor-prs.sh
+
+set -o pipefail
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"   # gh lives here on macOS/homebrew
+
+REGISTRY_FILE="{{REGISTRY_FILE}}"
+STATE_FILE="{{STATE_FILE}}"
+INTERVAL="${INTERVAL:-60}"
+
+command -v gh >/dev/null 2>&1 || { echo "[pr-monitor] error: gh CLI not found in PATH" >&2; exit 1; }
+
+while true; do
+  if [ ! -f "$REGISTRY_FILE" ]; then
+    sleep "$INTERVAL"
+    continue
+  fi
+
+  SIG=$(node -e '
+const fs = require("fs");
+const { execFileSync } = require("child_process");
+let reg;
+try { reg = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch (e) { process.exit(0); }
+const prs = (reg && reg.prs) || [];
+const lines = [];
+for (const pr of prs) {
+  if (!pr || !pr.repo || !pr.number) continue;
+  try {
+    const out = execFileSync("gh", ["pr", "view", String(pr.number), "--repo", pr.repo,
+      "--json", "state,mergedAt,comments,reviews,statusCheckRollup"], { encoding: "utf8", timeout: 30000 });
+    const j = JSON.parse(out);
+    const ci = (j.statusCheckRollup || []).map(c => `${c.name || c.context || "?"}:${c.conclusion || c.state || "pending"}`).sort().join(",");
+    lines.push(`${pr.repo}#${pr.number}|${pr.issue || ""}|${j.state}|${j.mergedAt || ""}|c${(j.comments || []).length}|r${(j.reviews || []).length}|${ci}`);
+  } catch (e) {
+    lines.push(`${pr.repo}#${pr.number}|${pr.issue || ""}|FETCH_ERROR`);
+  }
+}
+process.stdout.write(lines.sort().join("\n"));
+' "$REGISTRY_FILE" 2>/dev/null || true)
+
+  PREV=""
+  [ -f "$STATE_FILE" ] && PREV=$(cat "$STATE_FILE")
+
+  if [ "$SIG" != "$PREV" ] && [ -n "$SIG$PREV" ]; then
+    printf '%s\n' "$SIG" | while IFS='|' read -r KEY ISSUE STATE MERGED C R CI; do
+      [ -z "$KEY" ] && continue
+      OLD=$(printf '%s\n' "$PREV" | grep -F "$KEY|" || true)
+      NEW="$KEY|$ISSUE|$STATE|$MERGED|$C|$R|$CI"
+      [ "$OLD" = "$NEW" ] && continue
+      if [ "$STATE" = "MERGED" ]; then
+        echo "[pr-monitor] $KEY ($ISSUE) MERGED at $MERGED — move the tracker issue to the Merged state, clean the registry, pull the next task"
+      elif [ "$STATE" = "CLOSED" ]; then
+        echo "[pr-monitor] $KEY ($ISSUE) CLOSED without merge — investigate"
+      else
+        echo "[pr-monitor] $KEY ($ISSUE) changed: state=$STATE $C $R ci=${CI:-none}"
+      fi
+    done
+    printf '%s' "$SIG" > "$STATE_FILE"
+  fi
+
+  sleep "$INTERVAL"
+done

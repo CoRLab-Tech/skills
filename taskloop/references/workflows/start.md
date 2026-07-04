@@ -15,7 +15,7 @@ If any is missing, fall back to `init` workflow instead.
 ```bash
 SLUG=$(pwd | sed 's|/|-|g')
 MEM="$HOME/.claude/projects/${SLUG}/memory"
-rm -f "$MEM/.monitor-state"
+rm -f "$MEM/.monitor-state" "$MEM/.pr-monitor-state"
 ```
 
 Removing the state file forces the first tick to re-emit the current actionable queue, so Claude sees what's pending immediately.
@@ -30,16 +30,22 @@ Read the provider name from `$MEM/.env` (presence of `LINEAR_API_KEY` / `JIRA_AP
 
 If the queue has items, **start processing the first one immediately** following the spec in `$MEM/autonomous-loop.md`. If empty, just confirm "Monitor pornit, coadă goală" (or English equivalent) and continue to Step 3.
 
-## Step 3 — Arm the Monitor
+## Step 3 — Arm BOTH Monitors (queue + PRs)
 
-Call the harness's `Monitor` tool:
+The loop is an **independent instrument**: it watches the tracker queue AND its own open PRs by itself. The owner communicates ONLY through PR comments and tracker comments — never expect a chat ping ("I merged it") to drive the loop.
 
-- `command`: `$MEM/monitor.sh` (absolute path)
-- `description`: e.g. `<project name> ready queue`
-- `persistent`: `true`
-- `timeout_ms`: `3600000` (1 hour; harness max)
+Call the harness's `Monitor` tool TWICE:
 
-Save the returned `task_id`. That's the wake signal for the loop. Each `<task-notification>` event from this monitor wakes the loop with one line per change in the actionable queue.
+1. **Tracker queue monitor**
+   - `command`: `$MEM/monitor.sh` (absolute path)
+   - `description`: e.g. `<project name> ready queue`
+   - `persistent`: `true`, `timeout_ms`: `3600000`
+2. **PR watcher** (rendered from `assets/monitor-github-prs.sh.tmpl` at init)
+   - `command`: `$MEM/monitor-prs.sh`
+   - `description`: e.g. `<project name> loop-owned PRs (merge/close/comments/CI)`
+   - `persistent`: `true`, `timeout_ms`: `3600000`
+
+The PR watcher polls every PR in `.pr-feedback-state` via `gh` and emits a line the moment a PR is **MERGED** (→ move the issue to the Merged state, clean the registry, pull the next task), **CLOSED**, or changes comments/reviews/CI. Save both `task_id`s.
 
 ## Step 4 — Arm the ScheduleWakeup safety net
 
