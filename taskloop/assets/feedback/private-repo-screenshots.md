@@ -12,7 +12,7 @@ For PRs against **private** GitHub repos, do not reference screenshots via `raw.
 **How to apply:**
 - Commit screenshots into the PR branch under `.pr-screenshots/<issue-key>/` and reference them in the PR body via `https://github.com/<owner>/<repo>/blob/<sha>/.pr-screenshots/<issue-key>/<file>.png?raw=1` — these render with the reviewer's GitHub session.
 - Alternatively, rely on the GitHub PR's **Files changed** tab, which renders image files inline.
-- Add a note in the PR body that `.pr-screenshots/` is review-only and should be removed pre/post merge.
+- Lifecycle (deterministic, no cleanup step): the folder **ships with the merge** as the change's visual record. Keep it small — a handful of compressed PNGs per issue, no videos (link a comment attachment for those). It is an explicit, intentional exemption from the scoped-diff rule ([[feedback-minimal-diff-scope]]); never add a "remove before merge" note that no step executes, and never push cleanup commits after the gates have gone green.
 - Do NOT use `raw.githubusercontent.com` URLs for private repos.
 - Skip the separate `assets/<slug>-screenshots` branch — it adds cleanup overhead and the URLs don't render anyway.
 - Linked to [[feedback-pr-visual-evidence]].

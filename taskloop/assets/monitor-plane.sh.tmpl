@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# Plane (self-hosted or cloud) ready-queue poller for taskloop.
+# Emits one stdout block per change in the ready queue so the harness's
+# Monitor tool wakes Claude on every delta.
+#
+# The background monitor MUST use the REST API (curl): a bash poller cannot
+# call MCP tools. The in-conversation loop verbs use the Plane MCP instead —
+# see references/providers/plane.md.
+#
+# Placeholders substituted at init time:
+#   {{ENV_FILE}}   -> $MEM/.env
+#   {{STATE_FILE}} -> $MEM/.monitor-state
+#
+# Override polling cadence with: INTERVAL=30 ./monitor.sh
+
+set -o pipefail
+
+ENV_FILE="{{ENV_FILE}}"
+STATE_FILE="{{STATE_FILE}}"
+INTERVAL="${INTERVAL:-60}"
+
+if [ ! -f "$ENV_FILE" ]; then
+  echo "[monitor] error: env file not found at $ENV_FILE" >&2
+  exit 1
+fi
+
+while true; do
+  # Re-source on every tick so token rotations take effect.
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
+
+  MISSING=""
+  for v in PLANE_API_KEY PLANE_BASE_URL PLANE_WORKSPACE_SLUG PLANE_PROJECT_ID PLANE_READY_STATUS; do
+    if [ -z "$(eval echo \${$v:-})" ]; then
+      MISSING="$MISSING $v"
+    fi
+  done
+  if [ -n "$MISSING" ]; then
+    echo "[monitor] error: missing env var(s):$MISSING"
+    sleep "$INTERVAL"
+    continue
+  fi
+
+  # PLANE_BASE_URL is the API root (e.g. https://plane.corlab.tech/api); the
+  # public token API lives under /v1. Strip any trailing slash to be safe.
+  API="${PLANE_BASE_URL%/}/v1/workspaces/$PLANE_WORKSPACE_SLUG/projects/$PLANE_PROJECT_ID/issues/"
+
+  RESPONSE=$(curl -sS -G \
+    -H "X-Api-Key: $PLANE_API_KEY" \
+    -H "Accept: application/json" \
+    --max-time 30 \
+    --data-urlencode "expand=state" \
+    --data-urlencode "order_by=-updated_at" \
+    --data-urlencode "per_page=100" \
+    "$API" 2>/dev/null || true)
+
+  if [ -z "$RESPONSE" ]; then
+    sleep "$INTERVAL"
+    continue
+  fi
+
+  # Build a stable signature: sorted "key|status|updatedAt|title" lines, keeping
+  # only work items whose expanded state name matches the ready status.
+  SIG=$(printf '%s' "$RESPONSE" \
+    | READY="$PLANE_READY_STATUS" IDENT="${PLANE_PROJECT_IDENTIFIER:-}" python3 -c '
+import json, os, sys
+ready = os.environ.get("READY", "Todo")
+ident = os.environ.get("IDENT", "")
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+# Public list is cursor-paginated: work items live under "results".
+results = data.get("results", data) if isinstance(data, dict) else data
+if not isinstance(results, list):
+    sys.exit(0)
+for it in results:
+    st = it.get("state") or {}
+    name = st.get("name", "") if isinstance(st, dict) else ""
+    if name != ready:
+        continue
+    # Pre-extract into plain vars: f-string braces must hold no quotes/backslashes
+    # (Python 3.9 rejects backslashes inside f-string expressions).
+    seq = str(it.get("sequence_id", ""))
+    upd = it.get("updated_at", "")
+    title = it.get("name", "")
+    key = f"{ident}-{seq}" if ident else seq
+    print(f"{key}|{name}|{upd}|{title}")
+' 2>/dev/null | sort || true)
+
+  PREV=""
+  if [ -f "$STATE_FILE" ]; then
+    PREV=$(cat "$STATE_FILE")
+  fi
+
+  if [ "$SIG" != "$PREV" ]; then
+    COUNT=$(printf '%s' "$SIG" | grep -c . || true)
+    echo "[monitor] queue changed: ${COUNT} actionable issue(s)"
+    printf '%s\n' "$SIG" | head -n 5 | while IFS='|' read -r ID STATUS UPDATED TITLE; do
+      [ -z "$ID" ] && continue
+      printf '[monitor]  %s\t%s\t%s\t%s\n' "$ID" "$STATUS" "$UPDATED" "$TITLE"
+    done
+    printf '%s' "$SIG" > "$STATE_FILE"
+  fi
+
+  sleep "$INTERVAL"
+done

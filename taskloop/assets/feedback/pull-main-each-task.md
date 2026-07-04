@@ -15,3 +15,4 @@ For each new task, the feature branch MUST be cut from a freshly-updated `origin
 3. If switching back to the default branch locally is unavoidable, run `git pull --ff-only origin <default>` first; never silently fast-forward through merges.
 4. Do NOT branch from the currently-checked-out (possibly stale) branch the repo happened to be on at the start of the tick.
 5. Applies on every iteration, including consecutive tasks in the same service repo.
+6. All work reaches the default branch **only via PR** — never `git push` directly to `main`/the default branch, and never force-push any branch a human may have pulled (the loop's own unshared feature branch pre-PR is the only exception).

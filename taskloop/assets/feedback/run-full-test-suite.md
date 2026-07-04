@@ -14,4 +14,4 @@ After implementing any code change, run the **entire test suite** of the affecte
 - If the suite has coverage thresholds (check `jest` config in `package.json`), they're evaluated against the actual run. A single-spec run will skew totals. Run the full suite so thresholds match CI.
 - If any test fails, fix it before opening the PR. Do not push and rely on CI to surface it.
 - Sits on top of [[feedback-run-tests-locally]]: that rule mandates running tests locally; this one mandates running the *full* suite, not just the modified file.
-- When a service's full suite is genuinely too slow / requires external infra to boot, say so explicitly in the PR description and run as much as can be run locally — never silently skip.
+- The "can't run the full suite" exception is bounded, not self-declared: it applies ONLY when the suite needs credentials/infra this machine lacks, or when a **measured** run exceeds ~30 minutes wall-clock (attempt it before claiming). The PR body must then name the exact command attempted, the concrete blocker or measured runtime, and precisely which subset WAS run — never silently skip, and never claim "too slow" without the measurement.

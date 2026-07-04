@@ -14,6 +14,7 @@ If `$MEM` does not exist, print `taskloop is not initialized for this project �
 Read `$MEM/.env`. Detect the provider:
 
 - If `LINEAR_API_KEY` is present → provider is `Linear`
+- Else if `PLANE_API_KEY` is present → provider is `Plane`
 - Else if `JIRA_API_TOKEN` is present → provider is `Jira`
 - Else → print `unable to detect provider from .env` and stop
 
@@ -30,6 +31,10 @@ Source `$MEM/.env` and run the appropriate one-shot curl. Capture the issues arr
 ### Linear
 
 Use the GraphQL query from `references/providers/linear.md` ("Verify Todo queue" recipe). Parse `data.project.issues.nodes`.
+
+### Plane
+
+Use the REST curl from `references/providers/plane.md` ("Verify ready queue" recipe). Parse `results[]` and keep rows where `state.name == PLANE_READY_STATUS`.
 
 ### Jira
 

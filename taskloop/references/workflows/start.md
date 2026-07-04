@@ -22,9 +22,10 @@ Removing the state file forces the first tick to re-emit the current actionable 
 
 ## Step 2 — Verify the queue once
 
-Read the provider name from `$MEM/.env` (presence of `LINEAR_API_KEY` vs `JIRA_API_TOKEN` decides). Run the appropriate one-shot check from the provider doc:
+Read the provider name from `$MEM/.env` (presence of `LINEAR_API_KEY` / `JIRA_API_TOKEN` / `PLANE_API_KEY` decides). Run the appropriate one-shot check from the provider doc:
 
 - **Linear** — see "Verify Todo queue" in `references/providers/linear.md`
+- **Plane** — see "Verify ready queue" in `references/providers/plane.md`
 - **Jira** — see "Verify Ready queue" in `references/providers/jira.md`
 
 If the queue has items, **start processing the first one immediately** following the spec in `$MEM/autonomous-loop.md`. If empty, just confirm "Monitor pornit, coadă goală" (or English equivalent) and continue to Step 3.
