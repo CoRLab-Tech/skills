@@ -9,7 +9,7 @@ Every provider must define:
 1. **Env vars** — the credentials and identifiers needed to call the tracker
 2. **`monitor.sh.tmpl`** — bash polling loop that emits one stdout line per change in the ready queue
 3. **`get_issue(id)`** — fetch one issue's payload (id, title, description, branch hint, priority, state, url, labels)
-4. **`transition_state(id, target)`** — move an issue between states; supported `target` values are `in_progress`, `in_review`, `done`
+4. **`transition_state(id, target)`** — move an issue between states; supported `target` values are `in_progress`, `in_review`, `blocked`, `done`
 5. **`post_comment(id, markdown)`** — leave a comment on an issue (the loop uses this for the PR URL)
 6. **`create_backlog_issue(title, body)`** — create a new issue directly in the **backlog** (never the ready status); used by the `todo-opens-backlog-task` rule to mirror code TODOs into the tracker
 
@@ -73,8 +73,9 @@ If the tracker requires multiple calls, document the sequence.
 
 | `target` | Meaning | Typical mapping |
 |---|---|---|
-| `in_progress` | The loop has started work | "In Progress" |
-| `in_review` | PR is open, awaiting human review | "Ready for Review" / "In Review" / "Code Review" |
+| `in_progress` | The loop is working on it RIGHT NOW — first implementation or any rework (`status-mirrors-work` rule) | "In Progress" |
+| `in_review` | PR is open, all gates green, awaiting human review | "Ready for Review" / "In Review" / "Code Review" |
+| `blocked` | The loop cannot proceed — timeboxed release, missing decision/credential (`fail-gracefully-timebox` rule) | "Blocked" (create at init if the tracker allows; else Backlog + `BLOCKED:` comment) |
 | `done` | The PR merged — used by the `ticket-done-on-merge` rule | "Merged" when the workflow has it, else "Done" / the completed-group state |
 
 If the tracker uses opaque IDs (Linear's `stateId`, Jira's `transitionId`), document how to enumerate them once and cache. Note any per-current-state restrictions (Jira's workflow can forbid certain direct transitions).

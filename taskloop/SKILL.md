@@ -72,7 +72,7 @@ feedback/<slug>.md              # universal + project-specific rules
 
 ## Universal feedback rules
 
-33 rules ship as assets. `init` copies them into the project's `memory/feedback/` and links each one from `MEMORY.md`. These rules are provider-neutral and the loop reads them every tick.
+34 rules ship as assets. `init` copies them into the project's `memory/feedback/` and links each one from `MEMORY.md`. These rules are provider-neutral and the loop reads them every tick.
 
 The rules list (see `assets/feedback/`):
 
@@ -102,6 +102,7 @@ The rules list (see `assets/feedback/`):
 | `ticket-done-on-merge.md` | Merged PR → tracker issue moves to "Merged" or the closest completed state |
 | `wip-limit-open-prs.md` | Max 3 open loop-owned PRs; at the cap, service the review pipeline instead of new tasks |
 | `fail-gracefully-timebox.md` | ~3 failed attempts → document blocker on the issue, release it, move on; never weaken gates to "finish" |
+| `status-mirrors-work.md` | Ticket status mirrors reality at every moment: rework = In Progress, gates green = In Review, stuck = Blocked |
 | `use-project-skills.md` | Use repo-appropriate skills (rigorous, impeccable, pixel-perfect, ...) when they match the task |
 | `todo-opens-backlog-task.md` | Every TODO the diff introduces opens a matching backlog task in the tracker |
 | `save-corrections.md` | Save every mid-run user correction as a feedback memory for future ticks |
