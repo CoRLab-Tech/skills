@@ -5,8 +5,7 @@
 - [No AI attribution](feedback/no-ai-attribution.md) — never add Co-Authored-By / "Generated with Claude" to commits or PRs
 - [Pull main each task](feedback/pull-main-each-task.md) — branch from fresh `origin/main` every iteration, never from stale current branch
 - [Playwright verification required](feedback/playwright-testing.md) — UI changes verified via Playwright MCP before any PR
-- [Run tests locally](feedback/run-tests-locally.md) — `npm test` / `yarn test` mandatory before every PR; tsc + eslint are not enough
-- [Run full test suite](feedback/run-full-test-suite.md) — run the FULL suite (no path filter); per-file runs aren't enough
+- [Run full test suite](feedback/run-full-test-suite.md) — the FULL suite locally before every PR, exact CI command; tsc + eslint are not enough
 - [New code needs tests](feedback/new-code-needs-tests.md) — every behavior change ships with tests; bugfixes need a fail→pass reproducing test
 - [Regression is blocker](feedback/regression-is-blocker.md) — watch PR CI checks to completion; any failing test blocks everything until green
 - [Security review gate](feedback/security-review-gate.md) — every PR passes a security pass (skill or manual checklist) before transition
@@ -16,8 +15,7 @@
 - [Run code review](feedback/run-code-review.md) — invoke `/review` on every PR opened by the loop
 - [Rigorous PR critique](feedback/rigorous-pr-critique.md) — when the `rigorous` skill is available, run its critique on every PR besides `/review`
 - [QA agent review](feedback/qa-agent-review.md) — a QA agent judges the work globally vs requirements/design/context before the issue moves to review
-- [PR visual evidence](feedback/pr-visual-evidence.md) — UI changes require screenshots/video attached to the PR
-- [Design vs implementation](feedback/design-vs-implementation.md) — before/after screenshots mandatory for UI-affecting PRs; design vs implementation side-by-side when a design exists
+- [PR visual evidence](feedback/pr-visual-evidence.md) — mandatory before/after screenshots for UI-affecting PRs; design vs implementation side-by-side when a design exists
 - [Private repo screenshots](feedback/private-repo-screenshots.md) — host PR screenshots inside the PR branch (raw URLs 404 on private repos)
 - [PR link on ticket](feedback/pr-link-on-ticket.md) — every PR's link is posted as a durable comment on the tracker issue at the review transition
 - [Watch PR comments](feedback/watch-pr-comments.md) — actively track the loop's open PRs; review feedback takes priority over new tasks

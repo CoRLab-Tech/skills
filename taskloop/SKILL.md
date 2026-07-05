@@ -72,7 +72,7 @@ feedback/<slug>.md              # universal + project-specific rules
 
 ## Universal feedback rules
 
-34 rules ship as assets. `init` copies them into the project's `memory/feedback/` and links each one from `MEMORY.md`. These rules are provider-neutral and the loop reads them every tick.
+32 rules ship as assets. `init` copies them into the project's `memory/feedback/` and links each one from `MEMORY.md`. These rules are provider-neutral and the loop reads them every tick.
 
 The rules list (see `assets/feedback/`):
 
@@ -81,8 +81,7 @@ The rules list (see `assets/feedback/`):
 | `no-ai-attribution.md` | Never add Co-Authored-By / "Generated with Claude" to commits or PRs |
 | `pull-main-each-task.md` | Branch from fresh `origin/main` every iteration, never from stale branch |
 | `playwright-testing.md` | UI changes verified via Playwright MCP before PR |
-| `run-tests-locally.md` | `npm/yarn test` is mandatory before every PR |
-| `run-full-test-suite.md` | Run the **full** suite (no path filter) — per-spec runs aren't enough |
+| `run-full-test-suite.md` | The FULL suite locally before every PR, exact CI command — tsc/eslint/per-spec runs aren't enough |
 | `new-code-needs-tests.md` | Every behavior change ships with tests for the new behavior; bugfixes need a fail→pass reproducing test |
 | `regression-is-blocker.md` | Watch PR CI checks to completion; any failing test is a hard blocker |
 | `security-review-gate.md` | Every PR passes a security pass (security-review skill or manual checklist) before transition |
@@ -92,8 +91,7 @@ The rules list (see `assets/feedback/`):
 | `run-code-review.md` | Invoke `/review` on every PR opened by the loop |
 | `rigorous-pr-critique.md` | When the `rigorous` skill is available, run its critique on every PR besides `/review` |
 | `qa-agent-review.md` | A QA agent judges the work globally vs requirements/design/context before review transition |
-| `pr-visual-evidence.md` | UI changes require screenshots/video attached to the PR |
-| `design-vs-implementation.md` | Before/after screenshots mandatory for UI-affecting PRs; design vs implementation when a design exists |
+| `pr-visual-evidence.md` | Mandatory before/after screenshots for UI PRs; design vs implementation when a design exists |
 | `private-repo-screenshots.md` | Host PR screenshots inside the PR branch (raw URLs 404 on private repos) |
 | `pr-link-on-ticket.md` | Every PR gets its link posted as a comment on the tracker issue in the same step as the review transition |
 | `watch-pr-comments.md` | Actively track the loop's open PRs; review feedback outranks new tasks |

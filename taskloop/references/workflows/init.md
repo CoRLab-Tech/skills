@@ -183,7 +183,7 @@ Print a summary:
    Provider: <Linear|Jira|Plane>
    Memory:   ~/.claude/projects/<slug>/memory/
    Files:    .env (chmod 600), monitor.sh, MEMORY.md, autonomous-loop.md,
-             restart-instructions.md, feedback/ (34 files)
+             restart-instructions.md, feedback/ (32 files)
    Next:     run `/taskloop start` to arm the Monitor + ScheduleWakeup,
              or just type "start" in this directory in any future session.
 ```
