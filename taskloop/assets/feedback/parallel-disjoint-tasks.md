@@ -17,9 +17,11 @@ stylesheet) MUST stay sequential, that is what caused the conflicts the first ti
 WIP cap on open PRs, which bounds how many parallel agents may launch.
 
 **How to apply:**
-- Before pulling, partition the ready queue by touched-file overlap (infer from the task
-  descriptions + the repo layout). Launch one worktree agent per disjoint task, up to
-  `WIP cap − currently-open loop PRs`.
+- The partition comes from the queue triage plan: read each ready ticket's `LOOP-PLAN` marker
+  ([[feedback-queue-triage-plan]]) — a shared `group` id means the triage already established
+  file-disjointness. Only partition ad hoc (descriptions + repo layout) when no plan exists yet,
+  and record the result by running the triage. Launch one worktree agent per task in the group,
+  up to `WIP cap − currently-open loop PRs`, respecting `order` and unmerged `depends-on`.
 - Each agent gets the FULL discipline in its prompt: branch from origin/main, minimal diff, tests +
   full suite, browser verification with screenshots committed in-branch (gitignored runtime files
   like `.env` must be copied into the worktree; the server needs a unique PORT), secrets scan,

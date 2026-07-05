@@ -33,4 +33,5 @@
 - [Local test, remote unaffected](feedback/local-test-remote-unaffected.md) — for local tests run only the patched service via node; point everything else at staging
 - [Loop autonomy — PR/tracker only](feedback/loop-autonomy-pr-plane-only.md) — the loop detects merges/comments/CI itself and self-triggers; owner communicates only via PR + tracker
 - [Parallel disjoint tasks](feedback/parallel-disjoint-tasks.md) — file-disjoint ready tasks run as parallel worktree agents, bounded by the WIP cap; shared-file tasks stay sequential
+- [Queue triage plan](feedback/queue-triage-plan.md) — on every queue change the loop autonomously marks each ready ticket with LOOP-PLAN (order / group / depends-on); pull follows the plan
 - [Telegram pings to the owner](feedback/telegram-notify-owner.md) — blocked / review-ready (all PR links) / one idle ping, via ~/.claude/bin/tg-notify with Keychain creds
