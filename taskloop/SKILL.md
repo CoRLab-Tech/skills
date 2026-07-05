@@ -1,15 +1,15 @@
 ---
 name: taskloop
-description: Autonomous task-execution loop that pulls actionable issues from a task tracker (Linear or Jira), branches from main, implements, tests, opens a GitHub PR with no AI attribution, and self-paces the next iteration. Use when the user runs `/taskloop init` (one-time per-project setup that picks a provider and generates the loop's memory/config files), `/taskloop start` (re-arms the Monitor + ScheduleWakeup so the loop resumes for the current project), `/taskloop stop`, `/taskloop add-rule [slug]`, or `/taskloop status`. Also triggers when the user says "start" / "porneste" / "resume loop" in a working directory that already has a taskloop config under `~/.claude/projects/SLUG/memory/`.
+description: Autonomous task-execution loop that pulls actionable issues from a task tracker (Linear, Jira, or Plane), branches from main, implements, tests, opens a GitHub PR with no AI attribution, and self-paces the next iteration. Use when the user runs `/taskloop init` (one-time per-project setup that picks a provider and generates the loop's memory/config files), `/taskloop start` (re-arms the Monitor + ScheduleWakeup so the loop resumes for the current project), `/taskloop stop`, `/taskloop add-rule [slug]`, or `/taskloop status`. Also triggers when the user says "start" / "porneste" / "resume loop" in a working directory that already has a taskloop config under `~/.claude/projects/SLUG/memory/`.
 ---
 
 # Taskloop
 
 ## Overview
 
-Taskloop wires a task tracker (Linear, Jira) to a coding agent in a tight feedback loop. Each iteration pulls one "ready" issue, branches, implements the change with full test verification, opens a PR, and transitions the issue to review — fully autonomous, no AI attribution on commits/PRs. The loop self-paces via a `Monitor` background poll plus a `ScheduleWakeup` safety heartbeat.
+Taskloop wires a task tracker (Linear, Jira, Plane) to a coding agent in a tight feedback loop. Each iteration pulls one "ready" issue, branches, implements the change with full test verification, opens a PR, and transitions the issue to review — fully autonomous, no AI attribution on commits/PRs. The loop self-paces via a `Monitor` background poll plus a `ScheduleWakeup` safety heartbeat.
 
-Configuration is **per-project** (lives under `~/.claude/projects/<slug>/memory/`) so the same skill works for any repo. The provider (Linear / Jira) is chosen once at `init` time; the loop spec and feedback rules are provider-agnostic.
+Configuration is **per-project** (lives under `~/.claude/projects/<slug>/memory/`) so the same skill works for any repo. The provider (Linear / Jira / Plane) is chosen once at `init` time; the loop spec and feedback rules are provider-agnostic.
 
 ## Subcommand routing
 
@@ -34,11 +34,11 @@ If the args is empty, default to `init` only when the project's memory dir doesn
 
 ## Provider concept
 
-A provider (Linear, Jira) is a thin adapter that defines:
+A provider (Linear, Jira, Plane) is a thin adapter that defines:
 
 1. **Env vars** required (API key, host, project id, ...)
 2. **Monitor script** — a bash polling loop that emits one stdout line per change in the "ready" queue (so `Monitor` wakes Claude on every queue delta)
-3. **Recipes** — curl/CLI snippets for: get-issue, transition-state, post-comment
+3. **Recipes** — curl/CLI snippets for: get-issue, transition-state, post-comment, create-backlog-issue
 
 The loop spec calls these capabilities by name; swapping providers is a one-config-file change.
 
@@ -51,6 +51,7 @@ Per-project, under `~/.claude/projects/<slugified-cwd>/memory/`:
 ```
 .env                            # API keys, project IDs, chmod 600
 .monitor-state                  # ephemeral, last queue snapshot
+.pr-feedback-state              # PR registry (repo+number+issue, written at gh pr create) + per-PR last-seen feedback timestamps; drives sweep/merge/WIP-cap; survives stop/start
 monitor.sh                      # rendered from provider template
 MEMORY.md                       # index — loaded into every conversation
 autonomous-loop.md              # loop spec (provider-agnostic)
@@ -70,7 +71,7 @@ feedback/<slug>.md              # universal + project-specific rules
 
 ## Universal feedback rules
 
-11 rules ship as assets. `init` copies them into the project's `memory/feedback/` and links each one from `MEMORY.md`. These rules are provider-neutral and the loop reads them every tick.
+32 rules ship as assets. `init` copies them into the project's `memory/feedback/` and links each one from `MEMORY.md`. These rules are provider-neutral and the loop reads them every tick.
 
 The rules list (see `assets/feedback/`):
 
@@ -81,18 +82,39 @@ The rules list (see `assets/feedback/`):
 | `playwright-testing.md` | UI changes verified via Playwright MCP before PR |
 | `run-tests-locally.md` | `npm/yarn test` is mandatory before every PR |
 | `run-full-test-suite.md` | Run the **full** suite (no path filter) — per-spec runs aren't enough |
+| `new-code-needs-tests.md` | Every behavior change ships with tests for the new behavior; bugfixes need a fail→pass reproducing test |
+| `regression-is-blocker.md` | Watch PR CI checks to completion; any failing test is a hard blocker |
+| `security-review-gate.md` | Every PR passes a security pass (security-review skill or manual checklist) before transition |
+| `no-secrets-in-code.md` | Scan every staged diff for secrets; tokens/keys/passwords never reach git |
+| `minimal-diff-scope.md` | Touch only what the task requires; discovered work goes to the backlog, not the diff |
+| `dependency-hygiene.md` | New dependencies are a vetted last resort: exact name, advisories, pinning, PR justification |
 | `run-code-review.md` | Invoke `/review` on every PR opened by the loop |
+| `rigorous-pr-critique.md` | When the `rigorous` skill is available, run its critique on every PR besides `/review` |
+| `qa-agent-review.md` | A QA agent judges the work globally vs requirements/design/context before review transition |
 | `pr-visual-evidence.md` | UI changes require screenshots/video attached to the PR |
+| `design-vs-implementation.md` | Before/after screenshots mandatory for UI-affecting PRs; design vs implementation when a design exists |
 | `private-repo-screenshots.md` | Host PR screenshots inside the PR branch (raw URLs 404 on private repos) |
+| `pr-link-on-ticket.md` | Every PR gets its link posted as a comment on the tracker issue in the same step as the review transition |
+| `watch-pr-comments.md` | Actively track the loop's open PRs; review feedback outranks new tasks |
+| `read-media-in-comments.md` | Actually view comment attachments — images via Read, videos frame-extracted with ffmpeg |
+| `merge-on-approval.md` | Approved + green CI + no unresolved threads → the loop merges its own PR |
+| `ticket-done-on-merge.md` | Merged PR → tracker issue moves to "Merged" or the closest completed state |
+| `wip-limit-open-prs.md` | Max 3 open loop-owned PRs; at the cap, service the review pipeline instead of new tasks |
+| `fail-gracefully-timebox.md` | ~3 failed attempts → document blocker on the issue, release it, move on; never weaken gates to "finish" |
+| `use-project-skills.md` | Use repo-appropriate skills (rigorous, impeccable, pixel-perfect, ...) when they match the task |
+| `todo-opens-backlog-task.md` | Every TODO the diff introduces opens a matching backlog task in the tracker |
 | `save-corrections.md` | Save every mid-run user correction as a feedback memory for future ticks |
 | `only-ready-not-backlog.md` | Act only on the explicit "ready" status, never the triage backlog |
 | `local-test-remote-unaffected.md` | For local tests, run only the patched service via node; point at staging for everything else |
+| `loop-autonomy-pr-plane-only.md` | The loop detects merges/comments/CI itself and self-triggers; the owner communicates only via PR + tracker |
+| `parallel-disjoint-tasks.md` | File-disjoint ready tasks run as parallel worktree agents, bounded by the WIP cap; shared-file tasks stay sequential |
+| `telegram-notify-owner.md` | Telegram pings at attention-worthy moments — blocked, review-ready with PR links, or gone idle |
 
 ## Adding a new provider
 
-To support a new tracker (GitHub Issues, Asana, Plane, …):
+To support a new tracker (GitHub Issues, Asana, ClickUp, …):
 
-1. Implement the 5-verb contract documented in `references/adding-a-provider.md`.
+1. Implement the 6-verb contract documented in `references/adding-a-provider.md`.
 2. Create `references/providers/<name>.md` with env, queries, and recipes.
 3. Add a `monitor-<name>.sh.tmpl` to `assets/`.
 4. Add the provider to the `init` AskUserQuestion options.
@@ -117,4 +139,5 @@ Read these only when the workflow points to them:
 - `references/workflows/status.md` — diagnostics
 - `references/providers/linear.md` — Linear adapter (verified end-to-end)
 - `references/providers/jira.md` — Jira Cloud adapter (recipes documented, not live-tested)
-- `references/adding-a-provider.md` — the 5-verb contract
+- `references/providers/plane.md` — Plane adapter, MCP-first with curl monitor/fallback (verified end-to-end)
+- `references/adding-a-provider.md` — the 6-verb contract

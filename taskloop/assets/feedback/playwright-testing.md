@@ -14,5 +14,5 @@ After implementing any UI-affecting task, MUST verify the change end-to-end usin
 - Navigate with `mcp__playwright__browser_navigate`, exercise the golden path AND the edge cases for the changed feature.
 - Capture a `mcp__playwright__browser_snapshot` and a `mcp__playwright__browser_take_screenshot` for every relevant state.
 - Only then commit + push + open the PR.
-- If the change has no UI surface (pure backend, infra, docs), state that explicitly in the PR body instead of skipping silently. Do not invent a fake UI check.
+- "No UI surface" is a defined claim, not a vibe: it holds ONLY when the diff touches no frontend paths AND changes no API response shape, event payload, or config value that any UI consumes. A backend change that alters JSON a screen renders HAS a UI surface — drive the consuming screen. When the claim genuinely holds, state it explicitly in the PR body instead of skipping silently; the QA agent verifies the claim against the diff ([[feedback-qa-agent-review]]). Do not invent a fake UI check.
 - The screenshots double as PR evidence per [[feedback-pr-visual-evidence]].

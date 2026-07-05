@@ -116,6 +116,31 @@ mutation {
 
 The `body` is markdown. Use it to post the GitHub PR URL after `gh pr create`.
 
+## Create-backlog-issue recipe (TODO mirroring)
+
+> Not live-tested (added after the end-to-end verification run); validate on first use.
+
+Used by the `todo-opens-backlog-task` rule. Resolve the team's **backlog** state UUID once (states enumeration recipe above; pick the state with `type: "backlog"`), then:
+
+```graphql
+mutation {
+  issueCreate(
+    input: {
+      teamId: "<LINEAR_TEAM_ID>"
+      projectId: "<LINEAR_PROJECT_ID>"
+      title: "<distilled TODO title>"
+      description: "<context, file:line, deferral reason — markdown>"
+      stateId: "<backlog-state-uuid>"
+    }
+  ) {
+    success
+    issue { identifier url }
+  }
+}
+```
+
+Pass `stateId` explicitly — without it, Linear uses the team's default state for new issues (often Triage, but configurable), and if that default were `Todo` the loop would feed itself work. The returned `identifier` (e.g. `MIH-142`) is written back into the code comment: `TODO(MIH-142): ...`. The PR doesn't exist yet at creation time — after `gh pr create`, post the PR URL onto the issue via the post-comment recipe.
+
 ## Project-ID resolution recipe (init only)
 
 The user gives the project **name**; resolve to UUID:

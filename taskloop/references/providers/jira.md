@@ -124,6 +124,32 @@ EOF
 
 For multi-paragraph or markdown-like bodies, build the ADF document node-by-node. The ADF spec has explicit node types for `bulletList`, `codeBlock`, `link`, etc.
 
+## Create-backlog-issue recipe (TODO mirroring)
+
+Used by the `todo-opens-backlog-task` rule. Create the issue via the standard create endpoint (body is ADF, like comments):
+
+```bash
+curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+  -X POST -H "Content-Type: application/json" \
+  "https://$JIRA_HOST/rest/api/3/issue" \
+  -d "$(cat <<EOF
+{
+  "fields": {
+    "project": { "key": "$JIRA_PROJECT_KEY" },
+    "summary": "<distilled TODO title>",
+    "issuetype": { "name": "Task" },
+    "description": {
+      "type": "doc", "version": 1,
+      "content": [ { "type": "paragraph", "content": [ { "type": "text", "text": "<context, file:line, deferral reason>" } ] } ]
+    }
+  }
+}
+EOF
+)"
+```
+
+The response's `key` (e.g. `ENG-142`) is written back into the code comment: `TODO(ENG-142): ...`. The PR doesn't exist yet at creation time — after `gh pr create`, post the PR URL onto the issue via the post-comment recipe. New issues land in the workflow's **initial status** — verify once per project that it is a backlog-type status and NOT `$JIRA_READY_STATUS`; if the initial status is the ready status, immediately transition the created issue to the backlog status via the transition recipe, or the loop will feed itself work.
+
 ## Project-key resolution (init)
 
 The user gives the project key directly (e.g. `ENG`) — no name-to-key lookup needed. Validate by:

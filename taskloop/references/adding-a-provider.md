@@ -1,8 +1,8 @@
 # Adding a new provider
 
-A provider is a thin adapter that lets taskloop drive any task tracker (GitHub Issues, Asana, Plane, ClickUp, ...) through the same 5-verb contract. The loop spec is provider-neutral; only the adapter changes.
+A provider is a thin adapter that lets taskloop drive any task tracker (GitHub Issues, Asana, ClickUp, ...) through the same 6-verb contract. The loop spec is provider-neutral; only the adapter changes.
 
-## The 5-verb contract
+## The 6-verb contract
 
 Every provider must define:
 
@@ -11,6 +11,7 @@ Every provider must define:
 3. **`get_issue(id)`** — fetch one issue's payload (id, title, description, branch hint, priority, state, url, labels)
 4. **`transition_state(id, target)`** — move an issue between states; supported `target` values are `in_progress`, `in_review`, `done`
 5. **`post_comment(id, markdown)`** — leave a comment on an issue (the loop uses this for the PR URL)
+6. **`create_backlog_issue(title, body)`** — create a new issue directly in the **backlog** (never the ready status); used by the `todo-opens-backlog-task` rule to mirror code TODOs into the tracker
 
 Each verb is documented as a curl/CLI recipe in `references/providers/<name>.md`. No code generation — the loop reads the recipes and executes them inline.
 
@@ -74,7 +75,7 @@ If the tracker requires multiple calls, document the sequence.
 |---|---|---|
 | `in_progress` | The loop has started work | "In Progress" |
 | `in_review` | PR is open, awaiting human review | "Ready for Review" / "In Review" / "Code Review" |
-| `done` | Issue is complete (rarely used by the loop directly) | "Done" |
+| `done` | The PR merged — used by the `ticket-done-on-merge` rule | "Merged" when the workflow has it, else "Done" / the completed-group state |
 
 If the tracker uses opaque IDs (Linear's `stateId`, Jira's `transitionId`), document how to enumerate them once and cache. Note any per-current-state restrictions (Jira's workflow can forbid certain direct transitions).
 
@@ -87,6 +88,16 @@ PR opened: https://github.com/org/repo/pull/123
 ```
 
 If the tracker doesn't accept raw markdown (e.g., Jira's ADF requirement), the adapter is responsible for the wrapper. Document the exact body schema.
+
+## `create_backlog_issue(title, body)` recipe
+
+Create a new issue in the tracker's **backlog** state (or the workflow's initial state when that is the backlog). Used by the `todo-opens-backlog-task` feedback rule: every `TODO`/`FIXME` a diff introduces gets mirrored as a backlog issue, and the returned issue key is written back into the code comment (`TODO(PROJ-123): ...`).
+
+Requirements:
+
+- The created issue must land in the **backlog / triage** state — never the ready status the loop consumes, or the loop would feed itself work (see the `only-ready-not-backlog` rule).
+- Return (or document how to read from the response) the human issue key and URL, so the loop can reference them in the code comment and the PR.
+- Document which state the tracker assigns by default and, if that default is the ready status, how to pass the backlog state explicitly.
 
 ## File layout
 
@@ -103,11 +114,11 @@ Then:
 - Add the env-var block in Step 5 of `init.md` so `.env` is populated correctly.
 - Add the verify-queue recipe link in `start.md` and `status.md`.
 
-That's it — the loop spec, restart instructions, MEMORY.md template, and all 11 feedback rules are already provider-neutral and need no changes.
+That's it — the loop spec, restart instructions, MEMORY.md template, and all bundled feedback rules are already provider-neutral and need no changes.
 
 ## Validation checklist before shipping a new provider
 
-- [ ] All 5 verbs documented with concrete curl examples
+- [ ] All 6 verbs documented with concrete curl examples
 - [ ] Monitor template emits a clean "queue changed" line and ≤5 issue lines
 - [ ] Auth failures (401) are distinguishable from "queue empty" (200, zero issues)
 - [ ] Status names are configurable via env, not hardcoded

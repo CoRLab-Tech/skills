@@ -1,15 +1,36 @@
 # {{PROJECT_NAME}} — taskloop memory ({{PROVIDER}})
 
-- [Loop spec](autonomous-loop.md) — provider-agnostic 11-step cycle
+- [Loop spec](autonomous-loop.md) — provider-agnostic 13-step cycle
 - [Restart instructions](restart-instructions.md) — when user says "start"
 - [No AI attribution](feedback/no-ai-attribution.md) — never add Co-Authored-By / "Generated with Claude" to commits or PRs
 - [Pull main each task](feedback/pull-main-each-task.md) — branch from fresh `origin/main` every iteration, never from stale current branch
 - [Playwright verification required](feedback/playwright-testing.md) — UI changes verified via Playwright MCP before any PR
 - [Run tests locally](feedback/run-tests-locally.md) — `npm test` / `yarn test` mandatory before every PR; tsc + eslint are not enough
 - [Run full test suite](feedback/run-full-test-suite.md) — run the FULL suite (no path filter); per-file runs aren't enough
+- [New code needs tests](feedback/new-code-needs-tests.md) — every behavior change ships with tests; bugfixes need a fail→pass reproducing test
+- [Regression is blocker](feedback/regression-is-blocker.md) — watch PR CI checks to completion; any failing test blocks everything until green
+- [Security review gate](feedback/security-review-gate.md) — every PR passes a security pass (skill or manual checklist) before transition
+- [No secrets in code](feedback/no-secrets-in-code.md) — scan every staged diff for secrets; tokens/keys never reach git
+- [Minimal diff scope](feedback/minimal-diff-scope.md) — touch only what the task requires; discovered work → backlog, not the diff
+- [Dependency hygiene](feedback/dependency-hygiene.md) — new deps are a vetted last resort: exact name, advisories, pinning, justification
 - [Run code review](feedback/run-code-review.md) — invoke `/review` on every PR opened by the loop
+- [Rigorous PR critique](feedback/rigorous-pr-critique.md) — when the `rigorous` skill is available, run its critique on every PR besides `/review`
+- [QA agent review](feedback/qa-agent-review.md) — a QA agent judges the work globally vs requirements/design/context before the issue moves to review
 - [PR visual evidence](feedback/pr-visual-evidence.md) — UI changes require screenshots/video attached to the PR
+- [Design vs implementation](feedback/design-vs-implementation.md) — before/after screenshots mandatory for UI-affecting PRs; design vs implementation side-by-side when a design exists
 - [Private repo screenshots](feedback/private-repo-screenshots.md) — host PR screenshots inside the PR branch (raw URLs 404 on private repos)
+- [PR link on ticket](feedback/pr-link-on-ticket.md) — every PR's link is posted as a durable comment on the tracker issue at the review transition
+- [Watch PR comments](feedback/watch-pr-comments.md) — actively track the loop's open PRs; review feedback takes priority over new tasks
+- [Read media in comments](feedback/read-media-in-comments.md) — actually view attached images (Read) and videos (ffmpeg frame extraction) in every comment
+- [Merge on approval](feedback/merge-on-approval.md) — approved + green CI + no unresolved threads → the loop merges its own PR
+- [Ticket done on merge](feedback/ticket-done-on-merge.md) — merged PR → issue moves to "Merged" or the closest completed state
+- [WIP limit open PRs](feedback/wip-limit-open-prs.md) — max 3 open loop-owned PRs; at the cap, service the pipeline instead of pulling new tasks
+- [Fail gracefully, timebox](feedback/fail-gracefully-timebox.md) — ~3 failed attempts → document the blocker, release the task, move on; never weaken gates
+- [Use project skills](feedback/use-project-skills.md) — use repo-appropriate skills (rigorous, impeccable, pixel-perfect, ...) when they match the task
+- [TODO opens backlog task](feedback/todo-opens-backlog-task.md) — every TODO left in code opens a matching backlog task in the tracker
 - [Persist user corrections](feedback/save-corrections.md) — save every mid-run correction as a feedback memory for future ticks
 - [Only ready, not backlog](feedback/only-ready-not-backlog.md) — act only on the explicit "ready" status, never the triage backlog
 - [Local test, remote unaffected](feedback/local-test-remote-unaffected.md) — for local tests run only the patched service via node; point everything else at staging
+- [Loop autonomy — PR/tracker only](feedback/loop-autonomy-pr-plane-only.md) — the loop detects merges/comments/CI itself and self-triggers; owner communicates only via PR + tracker
+- [Parallel disjoint tasks](feedback/parallel-disjoint-tasks.md) — file-disjoint ready tasks run as parallel worktree agents, bounded by the WIP cap; shared-file tasks stay sequential
+- [Telegram pings to the owner](feedback/telegram-notify-owner.md) — blocked / review-ready (all PR links) / one idle ping, via ~/.claude/bin/tg-notify with Keychain creds
