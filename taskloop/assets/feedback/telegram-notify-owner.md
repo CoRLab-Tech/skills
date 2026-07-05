@@ -7,7 +7,7 @@ metadata:
 
 The loop pings the owner on Telegram via the global helper `~/.claude/bin/tg-notify` (bot token +
 chat id live in the macOS Keychain under services `claude-telegram-bot-token` /
-`claude-telegram-chat-id`, account `claude` — never in files or repos). The helper automatically prefixes every message with the machine tag (e.g. [Mac M1]) so multi-machine setups stay distinguishable. Messages are HTML,
+`claude-telegram-chat-id`, account `claude` — never in files or repos). The helper formats every message as `[machine tag] project · message` — pass the project with `-p <name>` (cwd basename as fallback); both elements are REQUIRED template parts so the owner sees at a glance which box and which project pings. Messages are HTML,
 one-glance short: **project · what happened · link(s)**.
 
 **Ping exactly at these moments:**
