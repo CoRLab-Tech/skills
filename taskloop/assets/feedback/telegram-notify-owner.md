@@ -13,9 +13,9 @@ one-glance short: **project · what happened · link(s)**.
 **Ping exactly at these moments:**
 1. **Blocked** — the loop released a task after failed attempts, or needs the owner (auth, a
    decision, an inaccessible resource): what is blocked + what he must do.
-2. **Review-ready** — an issue moves to the review state: task key + **every PR link tied to that
-   task**. A PR with no tracker issue → just the PR link. Finished work with no PR → say what
-   finished.
+2. **Review-ready** — an issue moves to the review state: **ONE MESSAGE PER TASK** (never bundle
+   several tasks into one message), each with the task key + every PR link tied to THAT task. A PR
+   with no tracker issue → just the PR link. Finished work with no PR → say what finished.
 3. **Idle** — queue empty or WIP-capped with nothing actionable: ONE ping when entering idle, not
    one per tick; ping again only when leaving and re-entering idle.
 
