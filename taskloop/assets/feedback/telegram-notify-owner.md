@@ -19,6 +19,7 @@ one-glance short: **project · what happened · link(s)**.
 3. **Idle** — queue empty or WIP-capped with nothing actionable: ONE ping when entering idle, not
    one per tick; ping again only when leaving and re-entering idle.
 
-**Never ping** routine progress, commits, or every loop tick — protect the channel's signal. If the
-Keychain entries are missing, tg-notify exits 1: tell the owner once (in the PR/tracker comment)
-instead of failing silently, and continue the loop.
+**Never ping** routine progress, commits, or every loop tick — protect the channel's signal. The ping is **best-effort, never a gate**: if `tg-notify` is missing (non-mac machine, fresh box), the
+Keychain entries are absent, or the send fails for any reason — note it ONCE in the PR/tracker comment
+and continue the loop. The durable ticket comment and status transition are the mandatory parts
+([[feedback-pr-link-on-ticket]], [[feedback-status-mirrors-work]]); the ping is a convenience on top.

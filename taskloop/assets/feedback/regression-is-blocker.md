@@ -12,7 +12,7 @@ Opening a PR always triggers the tests twice over: the full local suite BEFORE t
 **How to apply:**
 - After `gh pr create`, run `gh pr checks <num> --watch` (or poll `gh pr checks <num>` until no check is pending).
 - If any check fails: STOP. Do not transition the issue to the review status, do not pull the next task. Reproduce locally, fix, re-run the full local suite, push, and re-watch the checks.
-- Only a fully green check run allows the issue to move to the review status.
+- Only a fully green check run allows the issue to move to the review status. If the repo has **no CI checks at all** (`gh pr checks` reports none), the local full-suite run IS the gate — note "no CI configured" in the PR body and proceed.
 - The per-tick PR sweep ([[feedback-watch-pr-comments]]) re-checks previously opened PRs: one that has gone red since (merge conflict, flaky main) is picked up as a blocker there too, with priority over new tasks.
 - If a failure is a genuinely pre-existing default-branch breakage unrelated to the diff, document it explicitly in the PR body and the tracker comment — never silently ignore a red check.
-- The ONLY sanctioned exit from a red PR that won't converge is [[feedback-fail-gracefully-timebox]]: after ~3 honest fix attempts, mark the PR draft with the blocker documented, hand the issue back to triage, and move on — "stop everything" means no gate-skipping, not an infinite grind.
+- The ONLY sanctioned exit from a red PR that won't converge is [[feedback-fail-gracefully-timebox]]: when its timebox is exhausted, mark the PR draft with the blocker documented, hand the issue back to triage, and move on — "stop everything" means no gate-skipping, not an infinite grind.
