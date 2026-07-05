@@ -106,6 +106,9 @@ The rules list (see `assets/feedback/`):
 | `save-corrections.md` | Save every mid-run user correction as a feedback memory for future ticks |
 | `only-ready-not-backlog.md` | Act only on the explicit "ready" status, never the triage backlog |
 | `local-test-remote-unaffected.md` | For local tests, run only the patched service via node; point at staging for everything else |
+| `loop-autonomy-pr-plane-only.md` | The loop detects merges/comments/CI itself and self-triggers; the owner communicates only via PR + tracker |
+| `parallel-disjoint-tasks.md` | File-disjoint ready tasks run as parallel worktree agents, bounded by the WIP cap; shared-file tasks stay sequential |
+| `telegram-notify-owner.md` | Telegram pings at attention-worthy moments — blocked, review-ready with PR links, or gone idle |
 
 ## Adding a new provider
 
