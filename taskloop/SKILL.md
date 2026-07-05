@@ -71,7 +71,7 @@ feedback/<slug>.md              # universal + project-specific rules
 
 ## Universal feedback rules
 
-28 rules ship as assets. `init` copies them into the project's `memory/feedback/` and links each one from `MEMORY.md`. These rules are provider-neutral and the loop reads them every tick.
+32 rules ship as assets. `init` copies them into the project's `memory/feedback/` and links each one from `MEMORY.md`. These rules are provider-neutral and the loop reads them every tick.
 
 The rules list (see `assets/feedback/`):
 
@@ -94,6 +94,7 @@ The rules list (see `assets/feedback/`):
 | `pr-visual-evidence.md` | UI changes require screenshots/video attached to the PR |
 | `design-vs-implementation.md` | Before/after screenshots mandatory for UI-affecting PRs; design vs implementation when a design exists |
 | `private-repo-screenshots.md` | Host PR screenshots inside the PR branch (raw URLs 404 on private repos) |
+| `pr-link-on-ticket.md` | Every PR gets its link posted as a comment on the tracker issue in the same step as the review transition |
 | `watch-pr-comments.md` | Actively track the loop's open PRs; review feedback outranks new tasks |
 | `read-media-in-comments.md` | Actually view comment attachments — images via Read, videos frame-extracted with ffmpeg |
 | `merge-on-approval.md` | Approved + green CI + no unresolved threads → the loop merges its own PR |
