@@ -39,7 +39,7 @@ If an old Monitor for the same script is still running, `TaskStop` it first.
 
 Run one curl against `{{PROVIDER}}`'s API to check whether anything is already in `{{READY_STATUS}}` — the Monitor needs ~60s for its first tick. Use the "Verify queue" recipe from the provider doc. Do **not** include backlog items (per [[feedback-only-ready-not-backlog]]).
 
-If issues are returned, **triage the queue first** — mark every ready ticket with the `LOOP-PLAN` vocabulary (order / group / depends-on), autonomously per [[feedback-queue-triage-plan]] — then **start processing per the plan immediately** following the spec in [[autonomous-loop]]. If empty, just confirm "Monitor pornit, coadă goală, aștept evenimente" (or English equivalent) and continue to step 3.
+If issues are returned, **triage the queue first** — mark every ready ticket with the `LOOP-PLAN` vocabulary (order / group / depends-on / tier), autonomously per [[feedback-queue-triage-plan]] — then **start processing per the plan immediately** following the spec in [[autonomous-loop]]. If empty, just confirm "Monitor pornit, coadă goală, aștept evenimente" (or English equivalent) and continue to step 3.
 
 ## 3. Arm the dynamic /loop safety net
 

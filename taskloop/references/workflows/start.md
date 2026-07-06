@@ -28,7 +28,7 @@ Read the provider name from `$MEM/.env` (presence of `LINEAR_API_KEY` / `JIRA_AP
 - **Plane** — see "Verify ready queue" in `references/providers/plane.md`
 - **Jira** — see "Verify Ready queue" in `references/providers/jira.md`
 
-If the queue has items, **triage it first** — mark every ready ticket with the `LOOP-PLAN` vocabulary (order / group / depends-on), autonomously, per the `queue-triage-plan` feedback rule — then **start processing per the plan immediately** following the spec in `$MEM/autonomous-loop.md`. If empty, just confirm "Monitor pornit, coadă goală" (or English equivalent) and continue to Step 3.
+If the queue has items, **triage it first** — mark every ready ticket with the `LOOP-PLAN` vocabulary (order / group / depends-on / tier), autonomously, per the `queue-triage-plan` feedback rule — then **start processing per the plan immediately** following the spec in `$MEM/autonomous-loop.md`. If empty, just confirm "Monitor pornit, coadă goală" (or English equivalent) and continue to Step 3.
 
 ## Step 3 — Arm BOTH Monitors (queue + PRs)
 

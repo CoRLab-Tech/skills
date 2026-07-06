@@ -85,7 +85,7 @@ After the provider interview:
    - **Mythos (extra)** — top = `fable` (the Mythos-class rung above opus) for verdicts + frontier; **deep stays `opus`** — opus keeps its seat; balanced = `sonnet`, light = `haiku`. Maximum judgment quality, extra cost only where it buys something.
    - **Custom** — follow-up questions: top model (`fable`/`opus`), deep floor (`opus`/`sonnet`), balanced floor (`sonnet`/`opus`).
 
-   Record the answers for the hook render below and write `$MEM/feedback/model-routing-profile.md` (standard feedback frontmatter, name `feedback-model-routing-profile`) stating: top / deep / balanced models, the date, and the note that the tiers, the verdict-pin, and never-downgrade come from the universal `model-effort-routing` rule — only the model ids are per-project. Index it in `MEMORY.md`.
+   Record the answers for the hook render below and write `$MEM/feedback/model-routing-profile.md` (standard feedback frontmatter, name `feedback-model-routing-profile`) stating: top / deep / balanced / light models, the date, and the note that the tiers, the verdict-pin, and never-downgrade come from the universal `model-effort-routing` rule — only the model ids are per-project. Index it in `MEMORY.md`.
 5. **Anything else worth saving as a project rule?** — open text. If non-empty, immediately call `add-rule` workflow to create `feedback/<slug>.md`.
 
 ## Step 5 — Write files
@@ -158,7 +158,7 @@ Then install the PreToolUse hook in the **project's** `.claude/settings.local.js
 }
 ```
 
-(`<MEM>` expanded to the absolute memory-dir path.) Pipe-test before moving on: `echo '{"tool_input":{"prompt":"[LOOP-AGENT issue:X tier:deep verdict:no] t","model":"haiku"}}' | node $MEM/hook-agent-routing.mjs` must emit an `updatedInput` with the top model. This is the mechanical half of the `model-effort-routing` rule — the marker contract is enforced even when prose is forgotten.
+(`<MEM>` expanded to the absolute memory-dir path.) Pipe-test before moving on: `echo '{"tool_input":{"prompt":"[LOOP-AGENT issue:X tier:light verdict:yes] t","model":"haiku"}}' | node $MEM/hook-agent-routing.mjs` must emit an `updatedInput` with the profile's TOP model (the verdict pin — holds in every profile); and `echo '{"tool_input":{"prompt":"[LOOP-AGENT issue:X tier:deep verdict:no] t","model":"sonnet"}}' | node $MEM/hook-agent-routing.mjs` must emit the deep-floor model (silent pass-through is also correct when the profile's deep floor IS sonnet). This is the mechanical half of the `model-effort-routing` rule — the marker contract is enforced even when prose is forgotten.
 
 ### Repo setting — auto-delete merged branches
 
@@ -218,6 +218,8 @@ Print a summary:
 ```
 
 ## Idempotency notes
+
+- **Projects initialized before the routing feature** keep working exactly as before — their memory dir has no routing rule, marker contract, hook, or profile, so behavior is byte-for-byte pre-change. To adopt routing, re-run `init` (overwrite the feedback files AND render the hook + profile together). Never hand-copy the new `feedback/*.md` into an old memory dir without the hook and profile — the routing rule references both.
 
 - `init` re-run on an already-configured project: ask per-file whether to overwrite. Default no.
 - API key already in `.env`: reuse, don't re-prompt.
