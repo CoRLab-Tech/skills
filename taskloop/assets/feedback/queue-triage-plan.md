@@ -15,7 +15,7 @@ order: 2                 ← topological position; lower numbers run first
 group: P1                ← same group id = safe to run concurrently (file-disjoint)
 depends-on: MCP-4        ← issue keys this task must wait for ("—" if none)
 parallel-with: MCP-9     ← file-disjoint siblings in the same group ("—" if none)
-tier: standard           ← light | standard | deep — drives model/effort routing ([[feedback-model-effort-routing]])
+tier: standard           ← light | standard | deep | frontier — drives model/effort routing ([[feedback-model-effort-routing]])
 reason: touches only apps/api/pricing; MCP-4 migrates the schema this reads
 ```
 
