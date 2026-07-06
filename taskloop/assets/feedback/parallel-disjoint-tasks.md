@@ -8,8 +8,8 @@ metadata:
 The loop is not limited to one task at a time. When several ready tasks are **disjoint in the files
 they touch**, pull them together and implement each in its own **parallel agent** inside an
 **isolated git worktree** (own branch from fresh origin/main, own dev server on a unique port, own
-browser verification, own evidence commits). The orchestrating loop opens the PRs, does the tracker
-transitions, and registers them in `.pr-feedback-state`.
+browser verification, own evidence commits). The orchestrating loop opens the PRs **as drafts**, runs the
+step-10 gates per PR, performs the step-11 atomic flip per issue, and registers everything in `.pr-feedback-state`.
 
 **Why:** sequential work on independent tasks wastes wall-clock and the owner's review batching.
 The real constraints are (a) merge conflicts — tasks sharing hot files (an `index.html`, a shared
@@ -28,6 +28,8 @@ WIP cap on open PRs, which bounds how many parallel agents may launch.
   clean commit message with no AI attribution, push the branch, and NO PR / tracker / deploy
   actions of its own.
 - The orchestrator verifies each agent's return honestly (evidence exists, suite green), then opens
-  the PR with the agent's evidence embedded (`![](…/raw/<branch>/…)`), transitions the issue, and
-  registers the PR for the watcher.
+  the PR **as a draft** (`gh pr create --draft`) with the agent's evidence embedded
+  (`![](…/raw/<branch>/…)`), registers it for the watcher, runs the step-10 gates on it, and only
+  when all gates are green performs the step-11 atomic flip for that issue (gh pr ready + ticket
+  comment + review transition) — never "open and transition" in one motion.
 - Overlapping tasks stay sequential; when in doubt about overlap, treat as overlapping.
