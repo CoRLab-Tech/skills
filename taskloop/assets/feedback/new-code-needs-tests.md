@@ -5,7 +5,7 @@ metadata:
   type: feedback
 ---
 
-Running the existing suite green ([[feedback-run-tests-locally]], [[feedback-run-full-test-suite]]) proves the change broke nothing that was already covered. It proves nothing about the new behavior. Every behavior change the loop implements ships **with tests for that behavior**: the happy path, the relevant edge cases, and — for bugfixes — a test that reproduces the bug and fails on the pre-fix code.
+Running the existing suite green ([[feedback-run-full-test-suite]]) proves the change broke nothing that was already covered. It proves nothing about the new behavior. Every behavior change the loop implements ships **with tests for that behavior**: the happy path, the relevant edge cases, and — for bugfixes — a test that reproduces the bug and fails on the pre-fix code.
 
 **Why:** Untested new code is unprotected new code — the next task's "full suite green" means nothing for behavior no test observes. For bugfixes, the reproducing test is the only proof the fix addresses the actual bug and the only guard against its regression.
 

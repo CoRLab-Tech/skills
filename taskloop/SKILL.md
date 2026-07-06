@@ -52,6 +52,7 @@ Per-project, under `~/.claude/projects/<slugified-cwd>/memory/`:
 .env                            # API keys, project IDs, chmod 600
 .monitor-state                  # ephemeral, last queue snapshot
 .pr-feedback-state              # PR registry (repo+number+issue, written at gh pr create) + per-PR last-seen feedback timestamps; drives sweep/merge/WIP-cap; survives stop/start
+.queue-plan                     # last LOOP-PLAN triage + queue signature (ids/titles/desc-hashes/human-comment counts — never the loop's own plan comments)
 monitor.sh                      # rendered from provider template
 MEMORY.md                       # index — loaded into every conversation
 autonomous-loop.md              # loop spec (provider-agnostic)
@@ -80,8 +81,7 @@ The rules list (see `assets/feedback/`):
 | `no-ai-attribution.md` | Never add Co-Authored-By / "Generated with Claude" to commits or PRs |
 | `pull-main-each-task.md` | Branch from fresh `origin/main` every iteration, never from stale branch |
 | `playwright-testing.md` | UI changes verified via Playwright MCP before PR |
-| `run-tests-locally.md` | `npm/yarn test` is mandatory before every PR |
-| `run-full-test-suite.md` | Run the **full** suite (no path filter) — per-spec runs aren't enough |
+| `run-full-test-suite.md` | The FULL suite locally before every PR, exact CI command — tsc/eslint/per-spec runs aren't enough |
 | `new-code-needs-tests.md` | Every behavior change ships with tests for the new behavior; bugfixes need a fail→pass reproducing test |
 | `regression-is-blocker.md` | Watch PR CI checks to completion; any failing test is a hard blocker |
 | `security-review-gate.md` | Every PR passes a security pass (security-review skill or manual checklist) before transition |
@@ -91,8 +91,7 @@ The rules list (see `assets/feedback/`):
 | `run-code-review.md` | Invoke `/review` on every PR opened by the loop |
 | `rigorous-pr-critique.md` | When the `rigorous` skill is available, run its critique on every PR besides `/review` |
 | `qa-agent-review.md` | A QA agent judges the work globally vs requirements/design/context before review transition |
-| `pr-visual-evidence.md` | UI changes require screenshots/video attached to the PR |
-| `design-vs-implementation.md` | Before/after screenshots mandatory for UI-affecting PRs; design vs implementation when a design exists |
+| `pr-visual-evidence.md` | Mandatory before/after screenshots for UI PRs; design vs implementation when a design exists |
 | `private-repo-screenshots.md` | Host PR screenshots inside the PR branch (raw URLs 404 on private repos) |
 | `pr-link-on-ticket.md` | Every PR gets its link posted as a comment on the tracker issue in the same step as the review transition |
 | `watch-pr-comments.md` | Actively track the loop's open PRs; review feedback outranks new tasks |
@@ -101,13 +100,15 @@ The rules list (see `assets/feedback/`):
 | `ticket-done-on-merge.md` | Merged PR → tracker issue moves to "Merged" or the closest completed state |
 | `wip-limit-open-prs.md` | Max 3 open loop-owned PRs; at the cap, service the review pipeline instead of new tasks |
 | `fail-gracefully-timebox.md` | ~3 failed attempts → document blocker on the issue, release it, move on; never weaken gates to "finish" |
+| `status-mirrors-work.md` | Ticket status mirrors reality at every moment: rework = In Progress, gates green = In Review, stuck = Blocked |
 | `use-project-skills.md` | Use repo-appropriate skills (rigorous, impeccable, pixel-perfect, ...) when they match the task |
 | `todo-opens-backlog-task.md` | Every TODO the diff introduces opens a matching backlog task in the tracker |
-| `save-corrections.md` | Save every mid-run user correction as a feedback memory for future ticks |
+| `continuous-learning.md` | Corrections, review comments, ticket comments, and merge retros become durable per-project memories — the loop learns the project |
 | `only-ready-not-backlog.md` | Act only on the explicit "ready" status, never the triage backlog |
 | `local-test-remote-unaffected.md` | For local tests, run only the patched service via node; point at staging for everything else |
 | `loop-autonomy-pr-plane-only.md` | The loop detects merges/comments/CI itself and self-triggers; the owner communicates only via PR + tracker |
 | `parallel-disjoint-tasks.md` | File-disjoint ready tasks run as parallel worktree agents, bounded by the WIP cap; shared-file tasks stay sequential |
+| `queue-triage-plan.md` | On every queue change the loop autonomously marks each ready ticket with LOOP-PLAN (order / group / depends-on); pull follows the plan |
 | `telegram-notify-owner.md` | Telegram pings at attention-worthy moments — blocked, review-ready with PR links, or gone idle |
 
 ## Adding a new provider

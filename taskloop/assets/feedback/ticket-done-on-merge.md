@@ -15,6 +15,7 @@ The tracker must mirror reality: the moment a loop-owned PR is merged — whethe
 - Transition via the provider's transition recipe and post a closing comment on the issue: `PR merged: <url>` (+ merge commit SHA).
 - If the tracker issue was already moved manually, skip silently — never fight a human's transition.
 - Merged-PR entries are then pruned from `.pr-feedback-state`.
+- The merge moment is also the retro moment: 30 seconds on what review caught that the gates missed, distilled into a feedback memory when it would change future behavior — [[feedback-continuous-learning]].
 
 **Detection is the loop's own job.** The PR watcher (`monitor-prs.sh`) emits the merge event — the loop
 reacts to it autonomously: transition the issue, clean `.pr-feedback-state`, delete the head branch if

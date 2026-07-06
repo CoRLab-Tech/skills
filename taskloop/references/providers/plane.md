@@ -33,6 +33,7 @@ PLANE_PROJECT_ID         # UUID of the project (resolved at init)
 PLANE_PROJECT_IDENTIFIER # short project code, e.g. MCP — builds the human key <IDENTIFIER>-<sequence_id>
 PLANE_READY_STATUS       # ready state name, default "Todo"
 PLANE_REVIEW_STATUS      # post-PR review state name, default "In Review"
+PLANE_BLOCKED_STATUS     # blocked/timeboxed landing state, default "Blocked" (init creates it if missing)
 ```
 
 These mirror the three env vars the `plane` MCP server itself was registered with (`PLANE_API_KEY`, `PLANE_WORKSPACE_SLUG`, `PLANE_BASE_URL`) so the curl and MCP paths stay consistent.
@@ -129,6 +130,7 @@ Supported targets used by the loop:
 |---|---|---|
 | `in_progress` | `In Progress` | default state |
 | `in_review` | `$PLANE_REVIEW_STATUS` | env (default `In Review`) |
+| `blocked` | `$PLANE_BLOCKED_STATUS` | env (default `Blocked`; created at init in the `backlog` group, color `#EF4444`) |
 | `done` | `Done` | default state |
 
 ## Post-comment recipe

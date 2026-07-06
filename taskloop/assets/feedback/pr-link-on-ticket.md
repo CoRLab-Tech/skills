@@ -15,7 +15,7 @@ drifted mid-run and the owner had to correct it — treat it as part of the atom
 not an optional nicety.
 
 **How to apply:**
-- In the SAME loop step that opens the PR and transitions the issue to the review state, post a
+- In the SAME loop step that marks the PR ready-for-review and transitions the issue to the review state (spec step 11 — the PR itself was opened earlier, as a draft), post a
   comment on the tracker issue with the PR link(s): `PR: <a href="<url>">#<n> — <title></a>`.
   One comment listing every PR tied to that issue.
 - A follow-up PR for the same issue → post another comment when it opens.

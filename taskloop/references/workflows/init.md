@@ -55,7 +55,7 @@ Read `references/providers/plane.md`. Then ask `AskUserQuestion` for:
 5. **Ready status name** — default `Todo`.
 6. **Review status name** — default `In Review`.
 
-Verify by hitting the "Verify ready queue" curl (`.../issues/?expand=state&per_page=1`) and ensuring 200 (401 → token wrong; 404 → slug/project wrong). Then run `list_states` (MCP or curl) and confirm the review status exists; if missing, offer to create it (`create_state` / `POST .../states/`, group `started`) or point `PLANE_REVIEW_STATUS` at an existing state. Confirm the token's user is a project member (project-scoped writes 403 otherwise).
+Verify by hitting the "Verify ready queue" curl (`.../issues/?expand=state&per_page=1`) and ensuring 200 (401 → token wrong; 404 → slug/project wrong). Then run `list_states` (MCP or curl) and confirm the review status exists; if missing, offer to create it (`create_state` / `POST .../states/`, group `started`) or point `PLANE_REVIEW_STATUS` at an existing state. Also confirm a **Blocked** state exists — if missing, create it without asking (`create_state(name="Blocked", color="#EF4444", group="backlog")`): the status-mirrors-work rule requires it as the landing state for timeboxed tasks. Confirm the token's user is a project member (project-scoped writes 403 otherwise).
 
 If the `plane` MCP server is not registered at user scope, offer to add it now (see `references/providers/plane.md` → "Prerequisite"); the loop still works via curl if declined.
 
@@ -118,6 +118,7 @@ PLANE_PROJECT_ID=<uuid>
 PLANE_PROJECT_IDENTIFIER=<code>
 PLANE_READY_STATUS="Todo"
 PLANE_REVIEW_STATUS="In Review"
+PLANE_BLOCKED_STATUS="Blocked"
 ```
 
 Then `chmod 600 "$MEM/.env"`.

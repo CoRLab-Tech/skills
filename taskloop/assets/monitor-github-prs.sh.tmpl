@@ -9,7 +9,9 @@
 # registry cleanup, branch hygiene, pull the next task).
 #
 # Placeholders substituted at init time:
-#   {{REGISTRY_FILE}} -> $MEM/.pr-feedback-state   (JSON: {"prs":[{repo,number,issue,branch},...]})
+#   {{REGISTRY_FILE}} -> $MEM/.pr-feedback-state   (JSON: {"prs":[{repo,number,issue,branch,lastSeen,blocked},...]}
+#                        entries are born at pull time; repo+number added at gh pr create;
+#                        blocked=true marks fail-gracefully parks, excluded from the WIP cap)
 #   {{STATE_FILE}}    -> $MEM/.pr-monitor-state
 #
 # Override polling cadence with: INTERVAL=30 ./monitor-prs.sh
