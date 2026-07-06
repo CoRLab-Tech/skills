@@ -1,0 +1,68 @@
+#!/usr/bin/env node
+// taskloop agent-routing gate — PreToolUse hook on subagent spawns (Task/Agent).
+// Mechanically enforces the model-effort-routing rule with the project's
+// routing PROFILE (chosen at init) over a 4-rung ladder:
+//   light → (no floor)   standard → BALANCED   deep → DEEP   frontier/verdict → TOP
+// Under-floor spawns are upgraded in place (updatedInput). It NEVER downgrades —
+// rank comparison means a spawn already above its floor passes untouched — and
+// it ignores spawns without the [LOOP-AGENT] marker, so non-taskloop usage is
+// unaffected.
+//
+// Placeholders substituted at init time (from the routing-profile interview):
+//   {{TOP_MODEL}}      -> frontier tier + every verdict (fable | opus)
+//   {{DEEP_MODEL}}     -> deep-tier floor (opus keeps its place under a fable top)
+//   {{BALANCED_MODEL}} -> standard-tier floor (e.g. sonnet)
+
+const TOP_MODEL = '{{TOP_MODEL}}';
+const DEEP_MODEL = '{{DEEP_MODEL}}';
+const BALANCED_MODEL = '{{BALANCED_MODEL}}';
+const RANK = { haiku: 0, sonnet: 1, opus: 2, fable: 3 };
+
+let raw = '';
+process.stdin.on('data', (c) => (raw += c));
+process.stdin.on('end', () => {
+  let payload;
+  try { payload = JSON.parse(raw); } catch { process.exit(0); }
+  const ti = payload.tool_input || {};
+  const prompt = String(ti.prompt || '');
+
+  const marker = prompt.match(/^\[LOOP-AGENT([^\]]*)\]/);
+  if (!marker) process.exit(0); // not a loop spawn — hands off
+
+  const attrs = marker[1];
+  const tier = (attrs.match(/tier:(light|standard|deep|frontier)/) || [])[1] || 'standard';
+  const verdict = /verdict:yes/.test(attrs);
+  const model = ti.model; // undefined = inherit session model
+
+  const upgrade = (newModel, why) => {
+    process.stdout.write(JSON.stringify({
+      systemMessage: `taskloop routing gate: ${why} — model set to ${newModel} (was ${model || 'unset'})`,
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'allow',
+        updatedInput: { ...ti, model: newModel },
+      },
+    }));
+    process.exit(0);
+  };
+
+  if (verdict || tier === 'frontier') {
+    // Pin explicitly — even "unset" — so a mid-session /model downgrade can't
+    // leak into a verdict. Already at/above the profile's top? Untouched.
+    if (!model || (RANK[model] ?? -1) < (RANK[TOP_MODEL] ?? 3)) {
+      upgrade(TOP_MODEL, verdict ? 'verdict agents judge on the top model' : 'frontier tier is pinned to the top model');
+    }
+  } else if (tier === 'deep') {
+    // Floor only — an unset model inherits the session (assumed ≥ deep floor);
+    // an explicit under-floor choice gets raised. Never lowered.
+    if (model && (RANK[model] ?? -1) < (RANK[DEEP_MODEL] ?? 2)) {
+      upgrade(DEEP_MODEL, 'deep tier has a floor');
+    }
+  } else if (tier === 'standard') {
+    if (model && (RANK[model] ?? -1) < (RANK[BALANCED_MODEL] ?? 1)) {
+      upgrade(BALANCED_MODEL, 'standard tier must not run on the fastest model');
+    }
+  }
+  // light tier / compliant spawns: silent pass-through
+  process.exit(0);
+});

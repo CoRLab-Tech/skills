@@ -80,7 +80,13 @@ After the provider interview:
 1. **GitHub org/repo** — `<org>/<repo>` for single-repo, or just `<org>` for monorepos where each subfolder is its own repo.
 2. **Monorepo y/n** — if yes, ask for a brief description of how subfolders map to repos (e.g., "each top-level folder is a service named `<folder>` and maps to `git@github.com:<org>/<folder>.git`").
 3. **Scope exclusions** — comma-separated list of folder names to skip when sweeping the monorepo (e.g., `legacy-folder, sandbox`). Optional; default empty.
-4. **Anything else worth saving as a project rule?** — open text. If non-empty, immediately call `add-rule` workflow to create `feedback/<slug>.md`.
+4. **Model routing profile** — ask via `AskUserQuestion` ("Which model routing profile for this project's agents?"). The ladder has four rungs (light/standard/deep/frontier + verdicts pinned to the top):
+   - **High (Recommended, default)** — top = `opus` (verdicts + frontier fold into it), deep = `opus`, balanced = `sonnet`, light = `haiku`. Strong quality at standard cost.
+   - **Mythos (extra)** — top = `fable` (the Mythos-class rung above opus) for verdicts + frontier; **deep stays `opus`** — opus keeps its seat; balanced = `sonnet`, light = `haiku`. Maximum judgment quality, extra cost only where it buys something.
+   - **Custom** — follow-up questions: top model (`fable`/`opus`), deep floor (`opus`/`sonnet`), balanced floor (`sonnet`/`opus`).
+
+   Record the answers for the hook render below and write `$MEM/feedback/model-routing-profile.md` (standard feedback frontmatter, name `feedback-model-routing-profile`) stating: top / deep / balanced / light models, the date, and the note that the tiers, the verdict-pin, and never-downgrade come from the universal `model-effort-routing` rule — only the model ids are per-project. Index it in `MEMORY.md`.
+5. **Anything else worth saving as a project rule?** — open text. If non-empty, immediately call `add-rule` workflow to create `feedback/<slug>.md`.
 
 ## Step 5 — Write files
 
@@ -130,6 +136,29 @@ Render the provider's `assets/monitor-<provider>.sh.tmpl` by substituting `{{ENV
 ### `monitor-prs.sh` (the loop's own eyes on its PRs)
 
 Render `assets/monitor-github-prs.sh.tmpl` substituting `{{REGISTRY_FILE}}` → `$MEM/.pr-feedback-state` and `{{STATE_FILE}}` → `$MEM/.pr-monitor-state`. Write to `$MEM/monitor-prs.sh`, `chmod +x`. This watcher makes the loop **independent**: it detects MERGED / CLOSED / new-comments / CI changes on its own PRs by itself — the owner never has to announce a merge in chat; all owner communication flows through PR comments and tracker comments.
+
+### `hook-agent-routing.mjs` (mechanical model routing)
+
+Render `assets/hook-agent-routing.mjs.tmpl` from the routing profile chosen in Step 4: `{{TOP_MODEL}}` → the profile's top (`fable` for Mythos, `opus` for High), `{{DEEP_MODEL}}` → `opus` (both standard profiles; custom's answer otherwise), `{{BALANCED_MODEL}}` → `sonnet` (or custom's answer). Write to `$MEM/hook-agent-routing.mjs`.
+
+Then install the PreToolUse hook in the **project's** `.claude/settings.local.json` (create the file if missing, MERGE if it exists — never clobber; ensure it is gitignored):
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Task|Agent",
+        "hooks": [
+          { "type": "command", "command": "node <MEM>/hook-agent-routing.mjs" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+(`<MEM>` expanded to the absolute memory-dir path.) Pipe-test before moving on: `echo '{"tool_input":{"prompt":"[LOOP-AGENT issue:X tier:light verdict:yes] t","model":"haiku"}}' | node $MEM/hook-agent-routing.mjs` must emit an `updatedInput` with the profile's TOP model (the verdict pin — holds in every profile); and `echo '{"tool_input":{"prompt":"[LOOP-AGENT issue:X tier:deep verdict:no] t","model":"sonnet"}}' | node $MEM/hook-agent-routing.mjs` must emit the deep-floor model (silent pass-through is also correct when the profile's deep floor IS sonnet). This is the mechanical half of the `model-effort-routing` rule — the marker contract is enforced even when prose is forgotten.
 
 ### Repo setting — auto-delete merged branches
 
@@ -183,12 +212,14 @@ Print a summary:
    Provider: <Linear|Jira|Plane>
    Memory:   ~/.claude/projects/<slug>/memory/
    Files:    .env (chmod 600), monitor.sh, MEMORY.md, autonomous-loop.md,
-             restart-instructions.md, feedback/ (32 files)
+             restart-instructions.md, feedback/ (33 files)
    Next:     run `/taskloop start` to arm the Monitor + ScheduleWakeup,
              or just type "start" in this directory in any future session.
 ```
 
 ## Idempotency notes
+
+- **Projects initialized before the routing feature** keep working exactly as before — their memory dir has no routing rule, marker contract, hook, or profile, so behavior is byte-for-byte pre-change. To adopt routing, re-run `init` (overwrite the feedback files AND render the hook + profile together). Never hand-copy the new `feedback/*.md` into an old memory dir without the hook and profile — the routing rule references both.
 
 - `init` re-run on an already-configured project: ask per-file whether to overwrite. Default no.
 - API key already in `.env`: reuse, don't re-prompt.

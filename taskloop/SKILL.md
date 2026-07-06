@@ -54,6 +54,7 @@ Per-project, under `~/.claude/projects/<slugified-cwd>/memory/`:
 .pr-feedback-state              # PR registry (repo+number+issue, written at gh pr create) + per-PR last-seen feedback timestamps; drives sweep/merge/WIP-cap; survives stop/start
 .queue-plan                     # last LOOP-PLAN triage + queue signature (ids/titles/desc-hashes/human-comment counts — never the loop's own plan comments)
 monitor.sh                      # rendered from provider template
+hook-agent-routing.mjs          # PreToolUse gate: upgrades under-modeled [LOOP-AGENT] spawns (model-effort-routing rule)
 MEMORY.md                       # index — loaded into every conversation
 autonomous-loop.md              # loop spec (provider-agnostic)
 restart-instructions.md         # "start" recipe
@@ -72,7 +73,7 @@ feedback/<slug>.md              # universal + project-specific rules
 
 ## Universal feedback rules
 
-32 rules ship as assets. `init` copies them into the project's `memory/feedback/` and links each one from `MEMORY.md`. These rules are provider-neutral and the loop reads them every tick.
+33 rules ship as assets. `init` copies them into the project's `memory/feedback/` and links each one from `MEMORY.md`. These rules are provider-neutral and the loop reads them every tick.
 
 The rules list (see `assets/feedback/`):
 
@@ -108,7 +109,8 @@ The rules list (see `assets/feedback/`):
 | `local-test-remote-unaffected.md` | For local tests, run only the patched service via node; point at staging for everything else |
 | `loop-autonomy-pr-plane-only.md` | The loop detects merges/comments/CI itself and self-triggers; the owner communicates only via PR + tracker |
 | `parallel-disjoint-tasks.md` | File-disjoint ready tasks run as parallel worktree agents, bounded by the WIP cap; shared-file tasks stay sequential |
-| `queue-triage-plan.md` | On every queue change the loop autonomously marks each ready ticket with LOOP-PLAN (order / group / depends-on); pull follows the plan |
+| `queue-triage-plan.md` | On every queue change the loop autonomously marks each ready ticket with LOOP-PLAN (order / group / depends-on / tier); pull follows the plan |
+| `model-effort-routing.md` | Agents get model+effort by task tier (light/standard/deep/frontier); every go/no-go verdict runs on the profile's top model |
 | `telegram-notify-owner.md` | Telegram pings at attention-worthy moments — blocked, review-ready with PR links, or gone idle |
 
 ## Adding a new provider

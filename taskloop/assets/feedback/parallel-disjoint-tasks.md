@@ -22,7 +22,7 @@ WIP cap on open PRs, which bounds how many parallel agents may launch.
   file-disjointness. Only partition ad hoc (descriptions + repo layout) when no plan exists yet,
   and record the result by running the triage. Launch one worktree agent per task in the group,
   up to `WIP cap − currently-open loop PRs`, respecting `order` and unmerged `depends-on`.
-- Each agent gets the FULL discipline in its prompt: branch from origin/main, minimal diff, tests +
+- Each agent is launched with the model/effort its ticket's `tier` prescribes ([[feedback-model-effort-routing]]); verdict work stays with the orchestrator when the session runs the profile's top model — otherwise it is spawned as a `verdict:yes` subagent (which the routing hook pins to the top) per [[feedback-model-effort-routing]]. Each agent gets the FULL discipline in its prompt: branch from origin/main, minimal diff, tests +
   full suite, browser verification with screenshots committed in-branch (gitignored runtime files
   like `.env` must be copied into the worktree; the server needs a unique PORT), secrets scan,
   clean commit message with no AI attribution, push the branch, and NO PR / tracker / deploy
