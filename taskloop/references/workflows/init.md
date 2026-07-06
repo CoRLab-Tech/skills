@@ -131,6 +131,29 @@ Render the provider's `assets/monitor-<provider>.sh.tmpl` by substituting `{{ENV
 
 Render `assets/monitor-github-prs.sh.tmpl` substituting `{{REGISTRY_FILE}}` → `$MEM/.pr-feedback-state` and `{{STATE_FILE}}` → `$MEM/.pr-monitor-state`. Write to `$MEM/monitor-prs.sh`, `chmod +x`. This watcher makes the loop **independent**: it detects MERGED / CLOSED / new-comments / CI changes on its own PRs by itself — the owner never has to announce a merge in chat; all owner communication flows through PR comments and tracker comments.
 
+### `hook-agent-routing.mjs` (mechanical model routing)
+
+Render `assets/hook-agent-routing.mjs.tmpl` substituting `{{TOP_MODEL}}` → `fable` (or the most capable model this harness exposes; `opus` where fable is absent) and `{{BALANCED_MODEL}}` → `sonnet`. Write to `$MEM/hook-agent-routing.mjs`.
+
+Then install the PreToolUse hook in the **project's** `.claude/settings.local.json` (create the file if missing, MERGE if it exists — never clobber; ensure it is gitignored):
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Task|Agent",
+        "hooks": [
+          { "type": "command", "command": "node <MEM>/hook-agent-routing.mjs" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+(`<MEM>` expanded to the absolute memory-dir path.) Pipe-test before moving on: `echo '{"tool_input":{"prompt":"[LOOP-AGENT issue:X tier:deep verdict:no] t","model":"haiku"}}' | node $MEM/hook-agent-routing.mjs` must emit an `updatedInput` with the top model. This is the mechanical half of the `model-effort-routing` rule — the marker contract is enforced even when prose is forgotten.
+
 ### Repo setting — auto-delete merged branches
 
 Enable head-branch auto-delete on every target repo (confirm with the user once):

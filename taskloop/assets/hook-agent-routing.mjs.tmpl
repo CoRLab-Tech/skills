@@ -1,0 +1,56 @@
+#!/usr/bin/env node
+// taskloop agent-routing gate — PreToolUse hook on subagent spawns (Task/Agent).
+// Mechanically enforces the model-effort-routing rule: an agent tagged as a
+// verdict or deep-tier can NEVER run under-modeled — the hook upgrades the
+// spawn in place (updatedInput) instead of trusting prose. It never downgrades
+// anything and ignores every spawn that does not carry the [LOOP-AGENT] marker,
+// so non-taskloop agent usage is untouched.
+//
+// Placeholders substituted at init time:
+//   {{TOP_MODEL}}      -> upgrade target for verdict/deep (e.g. fable)
+//   {{BALANCED_MODEL}} -> floor for standard tier (e.g. sonnet)
+
+const TOP_MODEL = '{{TOP_MODEL}}';
+const TOP_OK = new Set(['{{TOP_MODEL}}', 'opus']);
+const BALANCED_MODEL = '{{BALANCED_MODEL}}';
+
+let raw = '';
+process.stdin.on('data', (c) => (raw += c));
+process.stdin.on('end', () => {
+  let payload;
+  try { payload = JSON.parse(raw); } catch { process.exit(0); }
+  const ti = payload.tool_input || {};
+  const prompt = String(ti.prompt || '');
+
+  const marker = prompt.match(/^\[LOOP-AGENT([^\]]*)\]/);
+  if (!marker) process.exit(0); // not a loop spawn — hands off
+
+  const attrs = marker[1];
+  const tier = (attrs.match(/tier:(light|standard|deep)/) || [])[1] || 'standard';
+  const verdict = /verdict:yes/.test(attrs);
+  const model = ti.model; // undefined = inherit session model
+
+  const upgrade = (newModel, why) => {
+    process.stdout.write(JSON.stringify({
+      systemMessage: `taskloop routing gate: ${why} — model set to ${newModel} (was ${model || 'unset'})`,
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'allow',
+        updatedInput: { ...ti, model: newModel },
+      },
+    }));
+    process.exit(0);
+  };
+
+  if (verdict || tier === 'deep') {
+    // Verdicts and deep work run on the top tier, explicitly — even "unset"
+    // gets pinned so a mid-session /model downgrade can't leak into a verdict.
+    if (!model || !TOP_OK.has(model)) {
+      upgrade(TOP_MODEL, verdict ? 'verdict agents judge on the top model' : 'deep-tier work needs the top model');
+    }
+  } else if (tier === 'standard' && model === 'haiku') {
+    upgrade(BALANCED_MODEL, 'standard tier must not run on the fastest model');
+  }
+  // light tier / compliant spawns: silent pass-through
+  process.exit(0);
+});

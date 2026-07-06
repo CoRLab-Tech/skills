@@ -54,6 +54,7 @@ Per-project, under `~/.claude/projects/<slugified-cwd>/memory/`:
 .pr-feedback-state              # PR registry (repo+number+issue, written at gh pr create) + per-PR last-seen feedback timestamps; drives sweep/merge/WIP-cap; survives stop/start
 .queue-plan                     # last LOOP-PLAN triage + queue signature (ids/titles/desc-hashes/human-comment counts — never the loop's own plan comments)
 monitor.sh                      # rendered from provider template
+hook-agent-routing.mjs          # PreToolUse gate: upgrades under-modeled [LOOP-AGENT] spawns (model-effort-routing rule)
 MEMORY.md                       # index — loaded into every conversation
 autonomous-loop.md              # loop spec (provider-agnostic)
 restart-instructions.md         # "start" recipe
