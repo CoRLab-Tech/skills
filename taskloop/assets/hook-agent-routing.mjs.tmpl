@@ -1,18 +1,21 @@
 #!/usr/bin/env node
 // taskloop agent-routing gate — PreToolUse hook on subagent spawns (Task/Agent).
-// Mechanically enforces the model-effort-routing rule: an agent tagged as a
-// verdict or deep-tier can NEVER run under-modeled — the hook upgrades the
-// spawn in place (updatedInput) instead of trusting prose. It never downgrades
-// anything and ignores every spawn that does not carry the [LOOP-AGENT] marker,
-// so non-taskloop agent usage is untouched.
+// Mechanically enforces the model-effort-routing rule with the project's
+// routing PROFILE (chosen at init): under-modeled spawns are upgraded in
+// place (updatedInput). It NEVER downgrades — a spawn already at or above the
+// profile's top passes untouched — and it ignores every spawn that does not
+// carry the [LOOP-AGENT] marker, so non-taskloop agent usage is unaffected.
 //
-// Placeholders substituted at init time:
-//   {{TOP_MODEL}}      -> upgrade target for verdict/deep (e.g. fable)
-//   {{BALANCED_MODEL}} -> floor for standard tier (e.g. sonnet)
+// Placeholders substituted at init time (from the routing-profile interview):
+//   {{TOP_MODEL}}      -> the profile's top model / upgrade target (fable | opus)
+//   {{TOP_SCOPE}}      -> what gets pinned to the top: verdict | verdict+deep | all
+//   {{BALANCED_MODEL}} -> floor for the standard tier (e.g. sonnet)
 
 const TOP_MODEL = '{{TOP_MODEL}}';
-const TOP_OK = new Set(['{{TOP_MODEL}}', 'opus']);
+const TOP_SCOPE = '{{TOP_SCOPE}}';
 const BALANCED_MODEL = '{{BALANCED_MODEL}}';
+// Models never rewritten downward, regardless of profile: at-or-above any top.
+const AT_OR_ABOVE_TOP = new Set(['fable', 'opus']);
 
 let raw = '';
 process.stdin.on('data', (c) => (raw += c));
@@ -42,11 +45,17 @@ process.stdin.on('end', () => {
     process.exit(0);
   };
 
-  if (verdict || tier === 'deep') {
-    // Verdicts and deep work run on the top tier, explicitly — even "unset"
-    // gets pinned so a mid-session /model downgrade can't leak into a verdict.
-    if (!model || !TOP_OK.has(model)) {
-      upgrade(TOP_MODEL, verdict ? 'verdict agents judge on the top model' : 'deep-tier work needs the top model');
+  const needsTop =
+    verdict ||
+    TOP_SCOPE === 'all' ||
+    (TOP_SCOPE === 'verdict+deep' && tier === 'deep');
+
+  if (needsTop) {
+    // Pin explicitly — even "unset", so a mid-session /model downgrade can't
+    // leak into a verdict. Already at/above the top (e.g. fable under an opus
+    // profile)? Untouched: the gate upgrades, never downgrades.
+    if (!model || !AT_OR_ABOVE_TOP.has(model)) {
+      upgrade(TOP_MODEL, verdict ? 'verdict agents judge on the top model' : 'this tier is pinned to the top model by the routing profile');
     }
   } else if (tier === 'standard' && model === 'haiku') {
     upgrade(BALANCED_MODEL, 'standard tier must not run on the fastest model');
