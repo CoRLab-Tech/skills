@@ -14,6 +14,7 @@ The loop owns its PRs until they merge. Every tick starts with a sweep of the st
 - Every comment's attachments are actually viewed — images via Read, videos via ffmpeg frame extraction — per [[feedback-read-media-in-comments]]. Never respond to a comment whose media wasn't looked at.
 - **Requested changes** → transition the ticket back to **In Progress** first ([[feedback-status-mirrors-work]]), implement on the same PR branch, push, reply to each comment concretely, re-request review, and move the ticket back to the review status once gates are green.
 - **Questions** → answer as a PR comment, specifically — no boilerplate.
+- While addressing feedback, listen for the **generalizable**: a comment that states a convention, a preference, or a recurring nit is a lesson, not just a fix — distill it into a feedback memory per [[feedback-continuous-learning]].
 - **Approved + green CI + no unresolved threads** → merge it yourself per [[feedback-merge-on-approval]].
 - Also check registered PRs whose state turned **merged** (`gh pr view <num> -R <owner>/<repo> --json state,mergedAt`): their tracker issues transition to "Merged"/closest completed state per [[feedback-ticket-done-on-merge]].
 - Priority order per tick: red CI on an open PR ([[feedback-regression-is-blocker]]) > requested changes > unanswered questions > approved-PR merges > merged-PR ticket transitions > new ready task.

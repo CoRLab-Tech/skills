@@ -103,7 +103,7 @@ The rules list (see `assets/feedback/`):
 | `status-mirrors-work.md` | Ticket status mirrors reality at every moment: rework = In Progress, gates green = In Review, stuck = Blocked |
 | `use-project-skills.md` | Use repo-appropriate skills (rigorous, impeccable, pixel-perfect, ...) when they match the task |
 | `todo-opens-backlog-task.md` | Every TODO the diff introduces opens a matching backlog task in the tracker |
-| `save-corrections.md` | Save every mid-run user correction as a feedback memory for future ticks |
+| `continuous-learning.md` | Corrections, review comments, ticket comments, and merge retros become durable per-project memories — the loop learns the project |
 | `only-ready-not-backlog.md` | Act only on the explicit "ready" status, never the triage backlog |
 | `local-test-remote-unaffected.md` | For local tests, run only the patched service via node; point at staging for everything else |
 | `loop-autonomy-pr-plane-only.md` | The loop detects merges/comments/CI itself and self-triggers; the owner communicates only via PR + tracker |

@@ -1,6 +1,6 @@
 # Add-rule workflow
 
-Add a new project-specific feedback rule that the loop will read every tick. Use this when the user gives a mid-run correction that should persist (see the `save-corrections.md` universal rule).
+Add a new project-specific feedback rule that the loop will read every tick. Use this when the user gives a mid-run correction that should persist, or when review/ticket feedback distills into a durable lesson (see the `continuous-learning.md` universal rule).
 
 ## Args
 
