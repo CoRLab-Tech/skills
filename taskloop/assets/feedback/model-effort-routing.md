@@ -13,7 +13,7 @@ The loop never launches an agent on a default model by inertia. Before every spa
 |---|---|---|---|
 | `light` | Mechanical, bounded, no design: typo/copy fixes, config values, dependency pins, doc edits, media frame extraction, registry bookkeeping | fastest available (e.g. `haiku`) | low–medium |
 | `standard` | Typical feature/bugfix: a few files, known patterns, no architectural choice | balanced tier or the session's model (e.g. `sonnet`) | medium–high |
-| `deep` | Architecture, cross-module refactors, debugging races/heisenbugs, performance work, security-sensitive surfaces (auth, payments, uploads), anything with advanced-reasoning smell | most capable available (e.g. `opus` / the session's top model) | high–xhigh |
+| `deep` | Architecture, cross-module refactors, debugging races/heisenbugs, performance work, security-sensitive surfaces (auth, payments, uploads), anything with advanced-reasoning smell | most capable available (e.g. the Mythos-class `fable` where the harness exposes it, else `opus`) | high–xhigh |
 
 **Verdicts are not a tier — they are always the top.** The QA agent gate ([[feedback-qa-agent-review]]), the security pass ([[feedback-security-review-gate]]), blocking-finding adjudication in reviews, the merge decision checks ([[feedback-merge-on-approval]]), and the timebox release call ([[feedback-fail-gracefully-timebox]]) run on the **most capable model the harness exposes, at high effort — regardless of the task's tier**. A light task still gets a top-model verdict; the cheap part is the typing, never the judging.
 
