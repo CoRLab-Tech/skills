@@ -10,6 +10,7 @@ After the PR is open and the technical gates have passed, spawn a dedicated **QA
 **Why:** The implementer's self-review inherits the implementer's blind spots. A separate agent reading the requirements fresh — with no memory of the implementation decisions — catches "correct code, wrong feature" mistakes that code review structurally cannot.
 
 **How to apply:**
+- The QA agent runs on the **most capable model available, at high effort** — never on the implementation's (possibly cheaper) tier; the judge outranks the worker ([[feedback-model-effort-routing]]).
 - Feed the QA agent everything the task context offers: the full issue title/description/acceptance criteria plus its tracker comments, linked design references, the PR diff (`gh pr diff <num>`), the visual evidence captured for the PR, and the relevant CLAUDE.md conventions.
 - Instruct it explicitly to: (a) restate the requirements as it understands them, (b) verify each one against the implementation, (c) check design fidelity and form/UX, (d) flag anything missing or extraneous, (e) audit the PR body's claims against the diff — the tests it says cover the change exist and assert the new behavior, and any "no UI surface" claim holds per the definition in [[feedback-playwright-testing]] — and (f) return a verdict: **pass** or **fail with reasons**.
 - A fail verdict is a blocker: fix, then re-run the QA gate before transitioning the issue to the review status.
