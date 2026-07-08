@@ -23,7 +23,10 @@ WIP cap on open PRs, which bounds how many parallel agents may launch.
   and record the result by running the triage. Launch one worktree agent per task in the group,
   up to `WIP cap − currently-open loop PRs`, respecting `order` and unmerged `depends-on`.
 - Each agent is launched with the model/effort its ticket's `tier` prescribes ([[feedback-model-effort-routing]]); verdict work stays with the orchestrator when the session runs the profile's top model — otherwise it is spawned as a `verdict:yes` subagent (which the routing hook pins to the top) per [[feedback-model-effort-routing]]. Each agent gets the FULL discipline in its prompt: branch from origin/main, minimal diff, tests +
-  full suite, browser verification with screenshots committed in-branch (gitignored runtime files
+  full suite **run as sequential foreground commands — never backgrounded**
+  ([[feedback-gates-run-foreground]]), browser verification with an **isolated headless browser,
+  never the shared MCP instance** ([[feedback-isolated-browsers-parallel-agents]]), screenshots
+  committed in-branch (gitignored runtime files
   like `.env` must be copied into the worktree; the server needs a unique PORT), secrets scan,
   clean commit message with no AI attribution, push the branch, and NO PR / tracker / deploy
   actions of its own.
