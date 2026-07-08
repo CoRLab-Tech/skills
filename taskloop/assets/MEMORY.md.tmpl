@@ -7,7 +7,8 @@
 - [Playwright verification required](feedback/playwright-testing.md) — UI changes verified via Playwright MCP before any PR
 - [Run full test suite](feedback/run-full-test-suite.md) — the FULL suite locally before every PR, exact CI command; tsc + eslint are not enough
 - [New code needs tests](feedback/new-code-needs-tests.md) — every behavior change ships with tests; bugfixes need a fail→pass reproducing test
-- [Regression is blocker](feedback/regression-is-blocker.md) — watch PR CI checks to completion; any failing test blocks everything until green
+- [Regression is blocker](feedback/regression-is-blocker.md) — watch PR CI checks to completion; any failing test blocks everything until green; post-merge `main` red is the top-priority blocker
+- [Targeted re-gate on fixes](feedback/targeted-regate-on-fixes.md) — first gate run full; fix rounds re-run only the blocked gates scoped to the fix delta, QA/security verdicts always on the full diff
 - [Security review gate](feedback/security-review-gate.md) — every PR passes a security pass (skill or manual checklist) before transition
 - [No secrets in code](feedback/no-secrets-in-code.md) — scan every staged diff for secrets; tokens/keys never reach git
 - [Minimal diff scope](feedback/minimal-diff-scope.md) — touch only what the task requires; discovered work → backlog, not the diff
