@@ -11,6 +11,7 @@ After implementing any UI-affecting task, MUST verify the change end-to-end usin
 
 **How to apply:**
 - After code changes, spin up the relevant dev server (frontend port, Storybook, or the patched service) per the project's `CLAUDE.md`.
+- The Playwright MCP browser is for the main loop's single-threaded verification only — implementation agents running in parallel must use an isolated headless browser instead ([[feedback-isolated-browsers-parallel-agents]]).
 - Navigate with `mcp__playwright__browser_navigate`, exercise the golden path AND the edge cases for the changed feature.
 - Capture a `mcp__playwright__browser_snapshot` and a `mcp__playwright__browser_take_screenshot` for every relevant state.
 - Only then commit + push + open the PR.

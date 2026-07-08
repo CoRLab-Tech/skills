@@ -7,7 +7,8 @@
 - [Playwright verification required](feedback/playwright-testing.md) — UI changes verified via Playwright MCP before any PR
 - [Run full test suite](feedback/run-full-test-suite.md) — the FULL suite locally before every PR, exact CI command; tsc + eslint are not enough
 - [New code needs tests](feedback/new-code-needs-tests.md) — every behavior change ships with tests; bugfixes need a fail→pass reproducing test
-- [Regression is blocker](feedback/regression-is-blocker.md) — watch PR CI checks to completion; any failing test blocks everything until green
+- [Regression is blocker](feedback/regression-is-blocker.md) — watch PR CI checks to completion; any failing test blocks everything until green; post-merge `main` red is the top-priority blocker
+- [Targeted re-gate on fixes](feedback/targeted-regate-on-fixes.md) — first gate run full; fix rounds re-run only the blocked gates scoped to the fix delta, QA/security verdicts always on the full diff
 - [Security review gate](feedback/security-review-gate.md) — every PR passes a security pass (skill or manual checklist) before transition
 - [No secrets in code](feedback/no-secrets-in-code.md) — scan every staged diff for secrets; tokens/keys never reach git
 - [Minimal diff scope](feedback/minimal-diff-scope.md) — touch only what the task requires; discovered work → backlog, not the diff
@@ -32,6 +33,8 @@
 - [Local test, remote unaffected](feedback/local-test-remote-unaffected.md) — for local tests run only the patched service via node; point everything else at staging
 - [Loop autonomy — PR/tracker only](feedback/loop-autonomy-pr-plane-only.md) — the loop detects merges/comments/CI itself and self-triggers; owner communicates only via PR + tracker
 - [Parallel disjoint tasks](feedback/parallel-disjoint-tasks.md) — file-disjoint ready tasks run as parallel worktree agents, bounded by the WIP cap; shared-file tasks stay sequential
+- [Gates run foreground](feedback/gates-run-foreground.md) — subagents run gate suites as sequential foreground commands; backgrounding a gate and ending the turn is a dead run
+- [Isolated browsers for parallel agents](feedback/isolated-browsers-parallel-agents.md) — parallel agents never share the Playwright/Chrome MCP browser; each uses its own isolated headless browser
 - [Queue triage plan](feedback/queue-triage-plan.md) — on every queue change the loop autonomously marks each ready ticket with LOOP-PLAN (order / group / depends-on / tier); pull follows the plan
 - [Model & effort routing](feedback/model-effort-routing.md) — agents routed by task tier; verdicts always on the most capable model at high effort
 - [Telegram pings to the owner](feedback/telegram-notify-owner.md) — blocked / review-ready (all PR links) / one idle ping, via ~/.claude/bin/tg-notify with Keychain creds

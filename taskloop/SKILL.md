@@ -73,7 +73,7 @@ feedback/<slug>.md              # universal + project-specific rules
 
 ## Universal feedback rules
 
-33 rules ship as assets. `init` copies them into the project's `memory/feedback/` and links each one from `MEMORY.md`. These rules are provider-neutral and the loop reads them every tick.
+36 rules ship as assets. `init` copies them into the project's `memory/feedback/` and links each one from `MEMORY.md`. These rules are provider-neutral and the loop reads them every tick.
 
 The rules list (see `assets/feedback/`):
 
@@ -84,7 +84,8 @@ The rules list (see `assets/feedback/`):
 | `playwright-testing.md` | UI changes verified via Playwright MCP before PR |
 | `run-full-test-suite.md` | The FULL suite locally before every PR, exact CI command — tsc/eslint/per-spec runs aren't enough |
 | `new-code-needs-tests.md` | Every behavior change ships with tests for the new behavior; bugfixes need a fail→pass reproducing test |
-| `regression-is-blocker.md` | Watch PR CI checks to completion; any failing test is a hard blocker |
+| `regression-is-blocker.md` | Watch PR CI checks to completion; any failing test is a hard blocker — and post-merge `main` is the backstop |
+| `targeted-regate-on-fixes.md` | First gate run is full; fix rounds re-run only the blocked gates scoped to the fix delta, with full-diff QA/security verdicts always |
 | `security-review-gate.md` | Every PR passes a security pass (security-review skill or manual checklist) before transition |
 | `no-secrets-in-code.md` | Scan every staged diff for secrets; tokens/keys/passwords never reach git |
 | `minimal-diff-scope.md` | Touch only what the task requires; discovered work goes to the backlog, not the diff |
@@ -109,6 +110,8 @@ The rules list (see `assets/feedback/`):
 | `local-test-remote-unaffected.md` | For local tests, run only the patched service via node; point at staging for everything else |
 | `loop-autonomy-pr-plane-only.md` | The loop detects merges/comments/CI itself and self-triggers; the owner communicates only via PR + tracker |
 | `parallel-disjoint-tasks.md` | File-disjoint ready tasks run as parallel worktree agents, bounded by the WIP cap; shared-file tasks stay sequential |
+| `gates-run-foreground.md` | Subagents run gate suites as sequential foreground commands; a subagent that backgrounds a gate and ends its turn is a dead run |
+| `isolated-browsers-parallel-agents.md` | Parallel agents never share the Playwright/Chrome MCP browser; each verifies with its own isolated headless browser |
 | `queue-triage-plan.md` | On every queue change the loop autonomously marks each ready ticket with LOOP-PLAN (order / group / depends-on / tier); pull follows the plan |
 | `model-effort-routing.md` | Agents get model+effort by task tier (light/standard/deep/frontier); every go/no-go verdict runs on the profile's top model |
 | `telegram-notify-owner.md` | Telegram pings at attention-worthy moments — blocked, review-ready with PR links, or gone idle |
