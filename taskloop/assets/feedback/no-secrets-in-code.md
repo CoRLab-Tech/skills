@@ -14,4 +14,4 @@ Before every commit, scan the staged diff for secrets. API keys, tokens, private
 - `.env*` files are never staged (verify the repo's `.gitignore` covers them; if not, add it as part of the change). The loop's own provider tokens live in the taskloop memory dir, never inside any repo.
 - Values needed at runtime come from env vars or the project's secret store; tests use obviously-fake fixtures (`test-key-000...`), never real or realistic credentials.
 - On a hit: unstage, replace with an env/config lookup, and re-scan. If a real secret was already committed on the branch, rewrite the branch history before pushing (the branch is unpushed local work at this point) and say so in the PR body if any doubt remains.
-- Screenshots/recordings for PR evidence ([[feedback-pr-visual-evidence]]) are checked too — blur or crop tokens, signed URLs, and real user data before committing them.
+- Screenshots/recordings for PR evidence ([[feedback-ui-verification-and-evidence]]) are checked too — blur or crop tokens, signed URLs, and real user data before committing them.

@@ -14,4 +14,4 @@ Running the existing suite green ([[feedback-run-full-test-suite]]) proves the c
 - For a **feature**: cover the primary path plus the edge cases the issue implies (empty/null input, permission-denied, concurrent/repeat calls — whatever fits the change). Match the repo's existing test style and placement; don't invent a new test layout.
 - Pure refactors with zero behavior change are the exception — existing tests ARE the contract; say "no behavior change; covered by existing tests X, Y" in the PR body.
 - If the touched area has **no test infrastructure at all**, don't silently skip: state it in the PR body and mirror a "add test coverage for <area>" task into the backlog ([[feedback-todo-opens-backlog-task]] mechanism).
-- The PR body lists which tests cover the change — the QA agent ([[feedback-qa-agent-review]]) verifies the claim.
+- The PR body lists which tests cover the change — the QA agent ([[feedback-pr-gate-passes]]) verifies the claim.

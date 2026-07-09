@@ -3,51 +3,67 @@
 - [Loop spec](autonomous-loop.md) — provider-agnostic 13-step cycle
 - [Agent brief](agent-brief.md) — the ONE file spawned implementation agents read at startup; keep it byte-stable (prompt cache)
 - [Restart instructions](restart-instructions.md) — when user says "start"
-- [Model usage log](model-usage-log.md) — per-task tier → model → effort ledger and measured gate costs
-- [No AI attribution](feedback/no-ai-attribution.md) — never add Co-Authored-By / "Generated with Claude" to commits or PRs
-- [Pull main each task](feedback/pull-main-each-task.md) — branch from fresh `origin/main` every iteration, never from stale current branch
-- [Playwright verification required](feedback/playwright-testing.md) — UI changes verified via Playwright MCP before any PR
-- [Run full test suite](feedback/run-full-test-suite.md) — the FULL suite locally before every PR, exact CI command; tsc + eslint are not enough
-- [New code needs tests](feedback/new-code-needs-tests.md) — every behavior change ships with tests; bugfixes need a fail→pass reproducing test
-- [Regression is blocker](feedback/regression-is-blocker.md) — watch PR CI checks to completion; any failing test blocks everything until green; post-merge `main` red is the top-priority blocker
-- [Targeted re-gate on fixes](feedback/targeted-regate-on-fixes.md) — first gate run full; fix rounds re-run only the blocked gates scoped to the fix delta, QA/security verdicts always on the full diff
-- [Security review gate](feedback/security-review-gate.md) — every PR passes a security pass (skill or manual checklist) before transition
-- [No secrets in code](feedback/no-secrets-in-code.md) — scan every staged diff for secrets; tokens/keys never reach git
-- [Minimal diff scope](feedback/minimal-diff-scope.md) — touch only what the task requires; discovered work → backlog, not the diff
-- [Dependency hygiene](feedback/dependency-hygiene.md) — new deps are a vetted last resort: exact name, advisories, pinning, justification
-- [Run code review](feedback/run-code-review.md) — invoke `/review` on every PR opened by the loop
-- [Rigorous PR critique](feedback/rigorous-pr-critique.md) — when the `rigorous` skill is available, run its critique on every PR besides `/review`
-- [QA agent review](feedback/qa-agent-review.md) — a QA agent judges the work globally vs requirements/design/context before the issue moves to review
-- [PR visual evidence](feedback/pr-visual-evidence.md) — mandatory before/after screenshots for UI-affecting PRs; design vs implementation side-by-side when a design exists
-- [Private repo screenshots](feedback/private-repo-screenshots.md) — host PR screenshots inside the PR branch (raw URLs 404 on private repos)
-- [PR link on ticket](feedback/pr-link-on-ticket.md) — every PR's link is posted as a durable comment on the tracker issue at the review transition
-- [Watch PR comments](feedback/watch-pr-comments.md) — actively track the loop's open PRs; review feedback takes priority over new tasks
-- [Read media in comments](feedback/read-media-in-comments.md) — actually view attached images (Read) and videos (ffmpeg frame extraction) in every comment
-- [Merge on approval](feedback/merge-on-approval.md) — approved + green CI + no unresolved threads → the loop merges its own PR
-- [Ticket done on merge](feedback/ticket-done-on-merge.md) — merged PR → issue moves to "Merged" or the closest completed state
-- [WIP limit open PRs](feedback/wip-limit-open-prs.md) — max 3 open loop-owned PRs; at the cap, service the pipeline instead of pulling new tasks
-- [Fail gracefully, timebox](feedback/fail-gracefully-timebox.md) — ~3 failed attempts → document the blocker, release the task, move on; never weaken gates
-- [Status mirrors work](feedback/status-mirrors-work.md) — rework = In Progress, gates green = In Review, stuck = Blocked; a status that lies is a bug
-- [Use project skills](feedback/use-project-skills.md) — use repo-appropriate skills (rigorous, impeccable, pixel-perfect, ...) when they match the task
-- [TODO opens backlog task](feedback/todo-opens-backlog-task.md) — every TODO left in code opens a matching backlog task in the tracker
-- [Continuous learning](feedback/continuous-learning.md) — chat corrections, PR review comments, ticket comments, and merge retros distill into durable per-project memories; every tick starts smarter
-- [Only ready, not backlog](feedback/only-ready-not-backlog.md) — act only on the explicit "ready" status, never the triage backlog
-- [Local test, remote unaffected](feedback/local-test-remote-unaffected.md) — for local tests run only the patched service via node; point everything else at staging
-- [Loop autonomy — PR/tracker only](feedback/loop-autonomy-pr-plane-only.md) — the loop detects merges/comments/CI itself and self-triggers; owner communicates only via PR + tracker
-- [Parallel disjoint tasks](feedback/parallel-disjoint-tasks.md) — file-disjoint ready tasks run as parallel worktree agents, bounded by the WIP cap; shared-file tasks stay sequential
-- [Gates run foreground](feedback/gates-run-foreground.md) — subagents run gate suites as sequential foreground commands; backgrounding a gate and ending the turn is a dead run
-- [Isolated browsers for parallel agents](feedback/isolated-browsers-parallel-agents.md) — parallel agents never share the Playwright/Chrome MCP browser; each uses its own isolated headless browser
-- [Queue triage plan](feedback/queue-triage-plan.md) — on every queue change the loop autonomously marks each ready ticket with LOOP-PLAN (order / group / depends-on / tier); pull follows the plan
-- [Model & effort routing](feedback/model-effort-routing.md) — agents routed by task tier; verdicts always on the most capable model at high effort
-- [Telegram pings to the owner](feedback/telegram-notify-owner.md) — blocked / review-ready (all PR links) / one idle ping, via ~/.claude/bin/tg-notify with Keychain creds
-- [Loop strategy profiles](feedback/loop-strategy-profiles.md) — `LOOP_STRATEGY` (auto/fast/balanced/heavy) in `.env`; `auto` picks the rung the ticket's complexity asks for, and re-classifies only when QA reveals a surface it missed — never counts failures
-- [Cost-conscious gating](feedback/cost-conscious-gating.md) — gate rigor and model scale to PR risk; top-model verdicts only, `xhigh` only on money/auth/concurrency
-- [Token hygiene](feedback/token-hygiene.md) — model-match every task, warm light-model ops-helper, byte-stable prompts; observe cheap, judge dear
-- [Efficiency levers](feedback/efficiency-levers.md) — the remaining safe token/wall-clock levers, and the hard quality floor never to cut
-- [CI failure triage](feedback/ci-failure-triage.md) — GitHub CI is the authority; a code-red is a blocker, a billing/infra-red falls back to local gates plus an explicit "CI was red, I verified locally" PR comment
-- [Draft until gated](feedback/draft-until-gated.md) — every PR is born a draft; ready-for-review + review transition + owner ping are ONE event
-- [Never self-halt the loop](feedback/never-self-halt-loop.md) — only the owner's `stop` halts it; never speak from a remembered queue; self-heal a proved-dead monitor
+- [Model usage log](model-usage-log.md) — routing policy + measured gate costs; the per-task ledger is written mechanically to `telemetry/`
+
+## Enforced by mechanism — you cannot forget these
+
+These do not depend on anything below being read. They hold whether or not the loop remembers a rule.
+
+- `hook-agent-routing.mjs` — a `PreToolUse` hook: under-modeled `[LOOP-AGENT]` spawns are upgraded in place, and every spawn is appended to `telemetry/spawns-*.jsonl`
+- `hook-loop-guards.mjs` — a `PreToolUse` hook: denies a backgrounded gate command, and denies a commit carrying AI attribution
+- `monitor.sh` / `monitor-prs.sh` — the loop's senses; merges, comments and CI deltas arrive as events, not as chat
+- `targeted-regate.mjs` — a finding without a verbatim `quote` cannot exist: the schema requires it
+- GitHub itself — a draft PR cannot be merged
+
+## Always — every tick, every task
+
+- [Never self-halt the loop](feedback/never-self-halt-loop.md) — only the owner's `stop` halts it; never speak from a remembered queue; the loop detects merges/comments/CI itself
+- [Loop strategy profiles](feedback/loop-strategy-profiles.md) — `LOOP_STRATEGY` (auto/fast/balanced/heavy); `auto` picks the rung the ticket's complexity asks for and never counts failures
+- [Queue triage plan](feedback/queue-triage-plan.md) — mark every ready ticket with LOOP-PLAN; only the explicit ready status is a work queue, never the backlog
 - [Continuous flow from ready](feedback/continuous-flow-from-ready.md) — no waves; a ticket blocked only on the loop's own open PR is doable now by stacking
+- [WIP limit on open PRs](feedback/wip-limit-open-prs.md) — at the cap, service the review pipeline instead of pulling new tasks
+- [Status mirrors work](feedback/status-mirrors-work.md) — rework = In Progress, gates green = In Review, stuck = Blocked; a status that lies is a bug
+- [Pull main each task](feedback/pull-main-each-task.md) — branch from fresh `origin/main` every iteration, never from a stale branch
+- [Gates run foreground](feedback/gates-run-foreground.md) — a subagent that backgrounds a gate and ends its turn is a dead run
+- [Draft until gated](feedback/draft-until-gated.md) — every PR is born a draft; ready + review transition + ticket comment + owner ping are ONE event
+- [Regression is blocker](feedback/regression-is-blocker.md) — watch CI to completion; a red check blocks everything, and `main` post-merge is the backstop
+- [No AI attribution](feedback/no-ai-attribution.md) — never add Co-Authored-By / "Generated with Claude" to commits or PRs
+
+## While implementing
+
+- [Minimal diff scope](feedback/minimal-diff-scope.md) — touch only what the task requires; discovered work goes to the backlog, not the diff
+- [New code needs tests](feedback/new-code-needs-tests.md) — every behavior change ships with tests; bugfixes need a fail→pass reproducing test
+- [Run full test suite](feedback/run-full-test-suite.md) — the FULL suite locally, the exact CI command; tsc + eslint are not enough
+- [No secrets in code](feedback/no-secrets-in-code.md) — scan every staged diff; tokens and keys never reach git
+- [Dependency hygiene](feedback/dependency-hygiene.md) — new deps are a vetted last resort: exact name, advisories, pinning, justification
+- [TODO opens backlog task](feedback/todo-opens-backlog-task.md) — every TODO the diff introduces opens a matching backlog task
+- [Use project skills](feedback/use-project-skills.md) — use repo-appropriate skills (rigorous, impeccable, pixel-perfect, ...) when they match
+- [Local test, remote unaffected](feedback/local-test-remote-unaffected.md) — run only the patched service via node; point everything else at staging
+- [Parallel disjoint tasks](feedback/parallel-disjoint-tasks.md) — file-disjoint tasks run as parallel worktree agents, bounded by the WIP cap
+- [Isolated browsers for parallel agents](feedback/isolated-browsers-parallel-agents.md) — parallel agents never share the Playwright/Chrome MCP browser
+- [Fail gracefully, timebox](feedback/fail-gracefully-timebox.md) — ~3 failed attempts → document the blocker, release the task, move on; never weaken gates
 - [Block stuck tickets visibly](feedback/block-stuck-tickets-visibly.md) — an unactionable ticket gets a WHY comment and moves to Blocked, never a silent stall
-- [PR registry race](feedback/pr-registry-race.md) — the orchestrator owns `.pr-feedback-state` and rebuilds it from `gh pr list`; agent appends are advisory
+
+## Gating a PR
+
+- [PR gate passes](feedback/pr-gate-passes.md) — the four lenses in order: `/review`, `rigorous`, security, QA agent; shared blocking semantics; publish the gate's evidence
+- [UI verification and evidence](feedback/ui-verification-and-evidence.md) — drive UI changes in a real browser; the captures become before/after evidence, hosted in the PR branch
+- [Cost-conscious gating](feedback/cost-conscious-gating.md) — rigor and model scale to PR risk; every finding cites its source or is refuted unread
+- [Targeted re-gate on fixes](feedback/targeted-regate-on-fixes.md) — first gate full; fix rounds re-run only the blocked dimensions, verdicts always on the full diff
+- [CI failure triage](feedback/ci-failure-triage.md) — a code-red blocks; a billing/infra-red falls back to local gates plus an explicit "CI was red, I verified locally" comment
+
+## After the PR is open
+
+- [Watch PR comments](feedback/watch-pr-comments.md) — review feedback outranks new tasks
+- [Read media in comments](feedback/read-media-in-comments.md) — actually view attached images (Read) and videos (ffmpeg frame extraction)
+- [Merge on approval](feedback/merge-on-approval.md) — approved + green CI + no unresolved threads → the loop merges its own PR
+- [Ticket done on merge](feedback/ticket-done-on-merge.md) — merged PR → issue moves to "Merged"; never claim the owner's Ready-for-QA / Deployed / Done
+- [PR registry race](feedback/pr-registry-race.md) — the orchestrator owns `.pr-feedback-state` and rebuilds it from `gh pr list`
 - [Reconcile tracker vs GitHub](feedback/reconcile-tracker-vs-github.md) — the PR watcher is edge-triggered; a periodic level-triggered reconcile repairs what it missed
+- [Telegram pings to the owner](feedback/telegram-notify-owner.md) — blocked / review-ready (all PR links) / one idle ping
+
+## Cost, routing, and learning
+
+- [Model & effort routing](feedback/model-effort-routing.md) — agents routed by task tier; verdicts always on the profile's top model
+- [Token hygiene](feedback/token-hygiene.md) — model-match every task, warm light-model ops-helper, byte-stable prompts; observe cheap, judge dear. Holds the remaining levers and the hard quality floor
+- [Continuous learning](feedback/continuous-learning.md) — corrections and review comments become durable rules, but only past the promotion bar: verified, names the failure pattern, records the ruled-out alternative

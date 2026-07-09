@@ -15,4 +15,4 @@ The diff contains what the task requires and nothing else. No drive-by refactors
 - Discovered problems (dead code, missing tests, a needed refactor, an adjacent bug) → mirror to the backlog via the [[feedback-todo-opens-backlog-task]] mechanism instead of fixing inline. Exception: something the task's own correctness depends on — then it's in scope, and the PR body says why.
 - Public contracts (API shapes, exported signatures, DB schemas, event payloads, config formats) change only when the task explicitly requires it; when they do, the PR body carries a **breaking-change note** naming the consumers checked.
 - Refactor-then-fix is fine when genuinely needed — but as **separate commits** within the PR (mechanical refactor commit + behavior commit) so review and revert stay surgical.
-- One standing exemption: `.pr-screenshots/<issue-key>/` — the PR's visual evidence ([[feedback-private-repo-screenshots]]) is mandated by another rule and is never scope creep.
+- One standing exemption: `.pr-screenshots/<issue-key>/` — the PR's visual evidence ([[feedback-ui-verification-and-evidence]]) is mandated by another rule and is never scope creep.

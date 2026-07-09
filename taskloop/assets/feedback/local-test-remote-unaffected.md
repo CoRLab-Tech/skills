@@ -14,6 +14,6 @@ When a reviewer or the user asks for a **local test** of a fix, do **not** spin 
 2. Configure their `.env` so every upstream dependency points at the staging URLs (gRPC, REST, DB hosts, auth servers). Keep these `.env` files local-only; do not commit.
 3. Acquire a valid auth token (e.g., admin JWT) from the staging auth service and use it against the locally-running gateway/service.
 4. Hit the affected endpoint with curl/HTTPie from localhost and verify behavior end-to-end against real staging data.
-5. **Use Playwright MCP for the user-facing verification** — drive the locally-running UI through Playwright per [[feedback-playwright-testing]] and capture screenshots as PR evidence.
+5. **Use Playwright MCP for the user-facing verification** — drive the locally-running UI through Playwright per [[feedback-ui-verification-and-evidence]] and capture screenshots as PR evidence.
 6. When the reviewer says "test on local", spin up only the patched service(s) and verify; do not touch docker-compose unless explicitly asked.
 7. Save this pattern as the default unless the user overrides for a specific test.
