@@ -1,13 +1,22 @@
 ---
 name: model-usage-log
-description: "Per-task ledger of tier → model → effort, and the measured cost of each gate shape — the telemetry that makes right-sizing auditable instead of assumed"
+description: "The routing policy in force, plus measured gate costs. The per-task ledger is NOT here — it is written mechanically to telemetry/*.jsonl by the routing hook and the usage roll-up"
 metadata:
   type: reference
 ---
 
-# Model + effort usage log — {{PROJECT_NAME}}
+# Model + effort routing — {{PROJECT_NAME}}
 
-Appended on every agent and gate spawn. Without this ledger, "we right-sized the routing" is a belief; with it, over-routing shows up as a pattern you can point at.
+**The per-task ledger is not kept in this file.** It used to be, and it depended on the loop remembering to append a row on every spawn — a convention, and therefore unreliable exactly when a long autonomous run makes it valuable. It is now written by a mechanism the loop cannot forget:
+
+| File | Written by | Contains |
+|---|---|---|
+| `telemetry/spawns-YYYY-MM.jsonl` | the `PreToolUse` routing hook, on every `[LOOP-AGENT]` spawn | issue, tier, strategy rung, verdict flag, requested → routed model, effort, label |
+| `telemetry/usage-YYYY-MM.jsonl` | `usage-rollup.mjs`, once each agent's transcript goes quiet | agent id, joined spawn fields, models actually used, input / output / cache-creation / cache-read tokens, message count, duration |
+
+Both are **append-only** and idempotent: rows are never rewritten or deleted, the roll-up skips agents it has already banked, and it refuses to bank an agent that is still running (a partial total could never be corrected in an append-only file). Analyse them with `jq`, DuckDB, a spreadsheet — whatever. Nothing in the loop reads them back: [[feedback-loop-strategy-profiles]] forbids `auto` from consulting its own telemetry to choose a rung.
+
+A note on `tokens.total`: it sums input, output, cache-creation and cache-read. Cache reads bill at roughly a tenth, so `total` measures work processed, not money spent. The roll-up deliberately records rather than prices — apply the per-model rates yourself.
 
 ## Routing policy in force
 
@@ -30,8 +39,18 @@ Record every A/B here rather than re-deriving it. A targeted fix re-gate ([[feed
 |---|---|---|---|---|
 | — | — | — | — | — |
 
-## Per-task ledger
+## Reading the ledger
 
-| Date | Ticket | PR | Task | Tier | Model | Effort | Gate |
-|---|---|---|---|---|---|---|---|
-| — | — | — | — | — | — | — | — |
+```bash
+# spend per tier this month
+jq -s 'group_by(.tier)[] | {tier: .[0].tier, agents: length, tok: (map(.tokens.total) | add)}' \
+   telemetry/usage-$(date +%Y-%m).jsonl
+
+# every spawn the routing hook had to upgrade — a hand-written model that broke the ladder
+jq -c 'select(.upgraded)' telemetry/spawns-*.jsonl
+
+# how often did `auto` reclassify, and into what
+jq -c 'select(.strategy != null) | {issue, strategy, tier}' telemetry/spawns-*.jsonl | sort -u
+```
+
+The last one is the calibration question: if tickets keep being reclassified into the same surface, that surface belongs in the entry table of [[feedback-loop-strategy-profiles]] — a change a **human** makes, so the next ticket enters at the right rung instead of paying for the discovery.

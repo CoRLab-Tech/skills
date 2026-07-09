@@ -1,0 +1,154 @@
+#!/usr/bin/env node
+// taskloop usage roll-up — turns finished subagent transcripts into append-only usage rows.
+//
+// The PreToolUse hook records WHAT was spawned (issue, tier, model, effort) but cannot know what it
+// COST: tokens are only known once the agent has run. This script closes that half. It reads each
+// subagent transcript, sums the per-message `usage` blocks, and appends one row per agent to
+//   {{MEM}}/telemetry/usage-YYYY-MM.jsonl
+// joined to the spawn ledger by `tool_use_id`.
+//
+// Properties that matter:
+//   * APPEND-ONLY. Rows are never rewritten or deleted. Analyse them later with anything.
+//   * IDEMPOTENT. An agent already present in any usage-*.jsonl is skipped, so it is safe to run
+//     every tick, twice a tick, or after a crash.
+//   * QUIESCENT-ONLY. An agent whose transcript was touched in the last QUIESCE_SEC seconds is still
+//     running; recording it now would bank a partial total that can never be corrected in an
+//     append-only file. It is skipped and picked up on a later run.
+//
+// Placeholders substituted at init time:
+//   {{MEM}}          -> the project's memory dir (absolute)
+//   {{PROJECT_DIR}}  -> ~/.claude/projects/<slug>  (the parent of the session dirs)
+//
+// Run:  node {{MEM}}/usage-rollup.mjs         (quiet; prints one line per row appended)
+//       QUIESCE_SEC=0 node ... --dry-run      (show what it would append, write nothing)
+
+import fs from 'node:fs';
+import path from 'node:path';
+import readline from 'node:readline';
+
+const MEM = '{{MEM}}';
+const PROJECT_DIR = '{{PROJECT_DIR}}';
+const TELEMETRY = path.join(MEM, 'telemetry');
+const QUIESCE_SEC = Number(process.env.QUIESCE_SEC ?? 120);
+const DRY_RUN = process.argv.includes('--dry-run');
+
+const monthFile = (d) => path.join(TELEMETRY, `usage-${d.toISOString().slice(0, 7)}.jsonl`);
+
+// ---- which agents have we already banked? -----------------------------------------------------
+function alreadyRecorded() {
+  const seen = new Set();
+  let files = [];
+  try { files = fs.readdirSync(TELEMETRY).filter((f) => /^usage-\d{4}-\d{2}\.jsonl$/.test(f)); } catch { return seen; }
+  for (const f of files) {
+    for (const line of fs.readFileSync(path.join(TELEMETRY, f), 'utf8').split('\n')) {
+      if (!line) continue;
+      try { const r = JSON.parse(line); if (r.agent_id) seen.add(r.agent_id); } catch { /* torn line, ignore */ }
+    }
+  }
+  return seen;
+}
+
+// ---- sum one transcript ------------------------------------------------------------------------
+async function summarize(file) {
+  const tokens = { input: 0, output: 0, cache_creation: 0, cache_read: 0 };
+  const models = new Set();
+  let first = null, last = null, messages = 0;
+
+  const rl = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+    let rec;
+    try { rec = JSON.parse(line); } catch { continue; }
+    const msg = rec.message ?? rec;
+    if (msg?.model) models.add(msg.model);
+    if (rec.timestamp) { first ??= rec.timestamp; last = rec.timestamp; }
+    const u = msg?.usage;
+    if (!u) continue;
+    messages++;
+    tokens.input += u.input_tokens ?? 0;
+    tokens.output += u.output_tokens ?? 0;
+    tokens.cache_creation += u.cache_creation_input_tokens ?? 0;
+    tokens.cache_read += u.cache_read_input_tokens ?? 0;
+  }
+  // `total` is every token the agent caused to be processed. Cache reads bill at a fraction, so a
+  // cost estimate needs the per-model rate — deliberately not baked in here; record, don't price.
+  const total = tokens.input + tokens.output + tokens.cache_creation + tokens.cache_read;
+  return { tokens: { ...tokens, total }, models: [...models], messages, first_ts: first, last_ts: last };
+}
+
+// ---- spawn ledger, for the join ----------------------------------------------------------------
+function spawnsByToolUseId() {
+  const map = new Map();
+  let files = [];
+  try { files = fs.readdirSync(TELEMETRY).filter((f) => /^spawns-\d{4}-\d{2}\.jsonl$/.test(f)); } catch { return map; }
+  for (const f of files) {
+    for (const line of fs.readFileSync(path.join(TELEMETRY, f), 'utf8').split('\n')) {
+      if (!line) continue;
+      try { const r = JSON.parse(line); if (r.tool_use_id) map.set(r.tool_use_id, r); } catch { /* ignore */ }
+    }
+  }
+  return map;
+}
+
+// ---- main --------------------------------------------------------------------------------------
+const seen = alreadyRecorded();
+const spawns = spawnsByToolUseId();
+const nowMs = Date.now();
+let appended = 0;
+
+let sessionDirs = [];
+try { sessionDirs = fs.readdirSync(PROJECT_DIR, { withFileTypes: true }).filter((d) => d.isDirectory()); } catch {
+  console.error(`[usage-rollup] cannot read ${PROJECT_DIR}`);
+  process.exit(1);
+}
+
+for (const dir of sessionDirs) {
+  const subagents = path.join(PROJECT_DIR, dir.name, 'subagents');
+  let entries = [];
+  try { entries = fs.readdirSync(subagents).filter((f) => /^agent-.*\.jsonl$/.test(f)); } catch { continue; }
+
+  for (const entry of entries) {
+    const agentId = entry.replace(/\.jsonl$/, '');
+    if (seen.has(agentId)) continue;
+
+    const file = path.join(subagents, entry);
+    const stat = fs.statSync(file);
+    if ((nowMs - stat.mtimeMs) / 1000 < QUIESCE_SEC) continue; // still running — bank it later
+
+    let meta = {};
+    try { meta = JSON.parse(fs.readFileSync(path.join(subagents, `${agentId}.meta.json`), 'utf8')); } catch { /* optional */ }
+
+    const summary = await summarize(file);
+    if (!summary.messages) continue; // nothing to record
+
+    const spawn = meta.toolUseId ? spawns.get(meta.toolUseId) : undefined;
+    const row = {
+      ts: new Date().toISOString(),
+      agent_id: agentId,
+      session_id: dir.name,
+      tool_use_id: meta.toolUseId ?? null,
+      agent_type: meta.agentType ?? null,
+      description: meta.description ?? null,
+      // joined from the spawn ledger — null when the agent was not a [LOOP-AGENT] spawn
+      issue: spawn?.issue ?? null,
+      tier: spawn?.tier ?? null,
+      strategy: spawn?.strategy ?? null,
+      verdict: spawn?.verdict ?? null,
+      effort: spawn?.effort ?? null,
+      routed_model: spawn?.final_model ?? null,
+      models: summary.models,
+      tokens: summary.tokens,
+      messages: summary.messages,
+      first_ts: summary.first_ts,
+      last_ts: summary.last_ts,
+    };
+
+    if (DRY_RUN) { console.log(JSON.stringify(row)); continue; }
+    fs.mkdirSync(TELEMETRY, { recursive: true });
+    fs.appendFileSync(monthFile(new Date()), JSON.stringify(row) + '\n');
+    appended++;
+    console.log(`[usage-rollup] ${agentId} ${row.issue ?? '-'} ${row.routed_model ?? row.models.join('/')} ${row.tokens.total} tok`);
+  }
+}
+
+if (!DRY_RUN && appended === 0) process.exit(0);

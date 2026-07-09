@@ -52,13 +52,29 @@ When two signals fire, take the higher rung. When genuinely ambiguous, route up 
 
 **The rung never drops while the ticket is open.** A re-classification that finds *less* complexity late in a ticket is almost always an artifact of the work already being done — the hard part is behind you, so the ticket looks easy. Lowering there would drop the gate exactly when the diff is largest. `heavy` is the ceiling; the rung resets only when the PR merges.
 
-**Bookkeeping — a rung change must be visible, or it silently resets.** Whenever Step 2 moves the rung:
+## The limits of `auto` — what may move the rung, and what may never
 
-1. Write the new rung into the ticket's `LOOP-PLAN` marker as `strategy:<rung>` so a later tick — a fresh session, a different agent — reads the current rung and not the entry one.
-2. Record **what was reclassified**, not that something failed, in the ticket comment that already accompanies the bounce ([[feedback-status-mirrors-work]]): "QA found a cross-tenant read bypass — this is an auth surface, not a plain endpoint → `heavy`." A comment that says only "escalated after bounce" has recorded nothing.
-3. Append a row to `model-usage-log.md` with the rung and the reclassification reason. That is the telemetry that calibrates the entry table: if tickets keep getting reclassified into the same surface, that surface belongs in Step 1's table so the next ticket enters at the right rung instead of paying for the discovery.
+These are hard bounds. A rung change that cannot point at one of them is invalid and must be reverted.
 
-**A bounce that does NOT move the rung is also worth one line in the log** — it is the evidence that the entry classification was right and the implementation was merely wrong. Without it you cannot tell a well-calibrated `auto` from a lucky one.
+**Range.** The rung is exactly one of `fast` | `balanced` | `heavy`. `fast` is the floor, `heavy` the ceiling. There is nothing below and nothing above.
+
+**The only inputs.** The entry rung comes from the Step 1 signal table and nothing else. The rung then moves only for a signal named in the Step 2 table, or by the two-misses valve. That is the closed list.
+
+**The forbidden reasons — none of these may move the rung, ever:**
+
+- how many times the ticket has failed (that is a counter, not a classification);
+- how many review comments it collected;
+- the size of the diff in lines, or the number of files touched *within* the planned footprint;
+- how long the ticket has taken, or how many tokens it has burned;
+- an agent's impression that the work "feels hard", absent a named surface from the table;
+- what rung the *previous* ticket ran at;
+- the owner being impatient, or the queue being deep.
+
+**One move per gate round.** A single round may reclassify a ticket at most once, however many findings it produced. Two findings that both point at the same missed surface are one discovery, not two.
+
+**Every move names its signal, in writing, on the ticket.** Record **what was reclassified**, not that something failed ([[feedback-status-mirrors-work]]): *"QA found a cross-tenant read bypass — this is an auth surface, not a plain endpoint → `heavy`."* A comment that says only "escalated after bounce" has recorded nothing, and by this rule the move did not happen.
+
+**`auto` never reads telemetry.** Its entire state is the `strategy:` field on the ticket's `LOOP-PLAN` marker, which lives in the tracker and survives every session, crash, and fresh agent. The loop must never consult `telemetry/`, `model-usage-log.md`, or its own past spend to decide a rung — a decision procedure that depends on logs is a decision procedure that breaks the first time a log is missing, rotated, or wrong. The telemetry exists for **the owner, after the fact**. If it shows tickets being reclassified into the same surface over and over, that is a signal for a *human* to add that surface to Step 1's table — not for the loop to adapt itself.
 
 **`auto` re-gates through [[feedback-targeted-regate-on-fixes]] like any other profile**, at the ticket's current rung. A ticket reclassified into `heavy` gets `heavy`'s full re-gate; a ticket that stayed at `fast` because the defect was a typo gets `fast`'s cheap one.
 

@@ -57,15 +57,20 @@ monitor.sh                      # rendered from provider template
 monitor-prs.sh                  # the loop's own eyes on its PRs (merge/comment/CI deltas)
 reconcile-merged.sh             # level-triggered repair of tickets the PR watcher's edge trigger missed (Plane)
 review-recall.sh                # cron: periodic ping listing review-ready PRs still unmerged
-hook-agent-routing.mjs          # PreToolUse gate: upgrades under-modeled [LOOP-AGENT] spawns (model-effort-routing rule)
+hook-agent-routing.mjs          # PreToolUse gate: upgrades under-modeled [LOOP-AGENT] spawns + writes the spawn ledger
+usage-rollup.mjs                # sums finished subagent transcripts into telemetry/usage-*.jsonl
 targeted-regate.mjs             # Workflow script for fix-round re-gates (targeted-regate-on-fixes rule)
+telemetry/spawns-YYYY-MM.jsonl  # append-only: issue, tier, strategy, requested → routed model, effort (hook-written)
+telemetry/usage-YYYY-MM.jsonl   # append-only: per-agent token totals joined to the spawn that caused them
 MEMORY.md                       # index — loaded into every conversation
 agent-brief.md                  # condensed startup brief spawned agents read INSTEAD of the full memory set
 autonomous-loop.md              # loop spec (provider-agnostic)
 restart-instructions.md         # "start" recipe
-model-usage-log.md              # per-task tier → model → effort ledger; measured gate costs
+model-usage-log.md              # routing policy + measured gate costs (the per-task ledger lives in telemetry/)
 feedback/<slug>.md              # universal + project-specific rules
 ```
+
+**Telemetry is written by mechanism, never by convention.** The hook cannot forget to record a spawn, and the roll-up cannot forget what an agent cost. Both files are append-only and idempotent. Nothing in the loop reads them back — `auto` decides a rung from the ticket's `LOOP-PLAN` marker alone, so a missing or rotated log can never change what the loop does. The telemetry is for the owner, after the fact.
 
 `MEMORY.md` is the only file guaranteed-loaded; everything else is linked from it and pulled in as needed.
 

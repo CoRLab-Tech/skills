@@ -155,7 +155,9 @@ Render `assets/monitor-github-prs.sh.tmpl` substituting `{{REGISTRY_FILE}}` → 
 
 ### `hook-agent-routing.mjs` (mechanical model routing)
 
-Render `assets/hook-agent-routing.mjs.tmpl` from the routing profile chosen in Step 4: `{{TOP_MODEL}}` → the profile's top (`fable` for Mythos, `opus` for High), `{{DEEP_MODEL}}` → `opus` (both standard profiles; custom's answer otherwise), `{{BALANCED_MODEL}}` → `sonnet` (or custom's answer). Write to `$MEM/hook-agent-routing.mjs`.
+Render `assets/hook-agent-routing.mjs.tmpl` from the routing profile chosen in Step 4: `{{TOP_MODEL}}` → the profile's top (`fable` for Mythos, `opus` for High), `{{DEEP_MODEL}}` → `opus` (both standard profiles; custom's answer otherwise), `{{BALANCED_MODEL}}` → `sonnet` (or custom's answer), `{{MEM}}` → the absolute memory-dir path. Write to `$MEM/hook-agent-routing.mjs`.
+
+Besides routing, this hook writes the **append-only spawn ledger** to `$MEM/telemetry/spawns-YYYY-MM.jsonl` — one line per `[LOOP-AGENT]` spawn. Telemetry writes are best-effort and wrapped in `try/catch`: a failing ledger must never block a spawn.
 
 Then install the PreToolUse hook in the **project's** `.claude/settings.local.json` (create the file if missing, MERGE if it exists — never clobber; ensure it is gitignored):
 
@@ -186,9 +188,15 @@ Render `assets/agent-brief.md.tmpl`, substituting `{{PROVIDER}}`, `{{PROJECT_NAM
 
 Every spawned implementation agent reads THIS instead of `MEMORY.md` + `autonomous-loop.md` + the feedback files. Its bytes must stay stable across spawns or the prompt cache misses on every agent — see `feedback/efficiency-levers.md`.
 
+### `usage-rollup.mjs` + `telemetry/` (the append-only spend record)
+
+`mkdir -p "$MEM/telemetry"`. Render `assets/usage-rollup.mjs.tmpl` substituting `{{MEM}}` → the memory dir and `{{PROJECT_DIR}}` → `~/.claude/projects/<slug>` (the parent of the session dirs). Write to `$MEM/usage-rollup.mjs`.
+
+The hook records what each agent *was*; this records what it *cost*, by summing the `usage` blocks in each finished subagent transcript and joining on `tool_use_id`. Append-only, idempotent, and it skips any agent whose transcript is still being written. Smoke-test with `QUIESCE_SEC=0 node "$MEM/usage-rollup.mjs" --dry-run | head -3` — it prints candidate rows without writing.
+
 ### `model-usage-log.md`
 
-Render `assets/model-usage-log.md.tmpl` with `{{PROJECT_NAME}}`. Write to `$MEM/model-usage-log.md`. The loop appends one row per agent/gate spawn.
+Render `assets/model-usage-log.md.tmpl` with `{{PROJECT_NAME}}`. Write to `$MEM/model-usage-log.md`. It holds the routing policy and the human-recorded gate-cost measurements; the per-task ledger lives in `telemetry/`, written mechanically.
 
 ### `reconcile-merged.sh` (Plane only, level-triggered repair)
 
@@ -255,8 +263,9 @@ Print a summary:
    Strategy: <fast|balanced|heavy>
    Memory:   ~/.claude/projects/<slug>/memory/
    Files:    .env (chmod 600), monitor.sh, monitor-prs.sh, hook-agent-routing.mjs,
-             targeted-regate.mjs, MEMORY.md, agent-brief.md, autonomous-loop.md,
-             restart-instructions.md, model-usage-log.md, feedback/ (47 files)
+             usage-rollup.mjs, targeted-regate.mjs, MEMORY.md, agent-brief.md,
+             autonomous-loop.md, restart-instructions.md, model-usage-log.md,
+             telemetry/ (append-only spend record), feedback/ (47 files)
    Next:     run `/taskloop start` to arm the Monitor + ScheduleWakeup,
              or just type "start" in this directory in any future session.
 ```
