@@ -1,0 +1,48 @@
+---
+name: agent-brief
+description: "One-page condensed brief for spawned implementation agents — read THIS at startup instead of MEMORY.md + autonomous-loop.md + the feedback files, to cut repeated startup-read cost"
+metadata:
+  type: reference
+---
+
+**Spawned loop agents: read ONLY this file at startup, not the full memory set.** It condenses every binding rule you need. Consult a full feedback file *only* if this brief is silent on your case.
+
+**This file is cache-critical. Do not casually rewrite or reorder it** — every agent reads the same bytes, so churn busts the prompt cache for every spawn after it ([[feedback-efficiency-levers]]).
+
+## The cycle — one task, end to end, in your isolated worktree
+
+1. `git fetch origin && git checkout -b {{BRANCH_PREFIX}}/{{ISSUE_PREFIX}}-<N>-<slug> origin/main`. Always fresh `origin/main`, never the stale checkout.
+2. Read the ticket through the {{PROVIDER}} recipe in the loop's provider reference (credentials in `.env`).
+3. **IMMEDIATELY transition the issue → In Progress before you write any code**, so the tracker mirrors active work from the start. A ticket sitting in {{READY_STATUS}} while you work reads as "nothing in progress". It moves to {{REVIEW_STATUS}} only at finalize.
+4. Implement **only** this task — minimal diff, no scope creep, no public-contract moves unless asked. A new dependency is a vetted last resort.
+5. Ship tests WITH the change: a bugfix needs a fail→pass reproducing test; new behavior needs coverage.
+6. **Gates run FOREGROUND.** Never `run_in_background`, never arm a Monitor for tests. This also covers any container rebuild + live-stack verification: never background the build and end your turn — that is a dead run, the build will not wake you. Wait for it in the foreground: poll until healthy, then verify, all inline in one turn. Run `{{TEST_CMD}}` plus typecheck, lint, and build **for the affected project only** — the whole-monorepo run is `main`'s post-merge job, not yours.
+7. Scan the staged diff for secrets. Commit as `{{ISSUE_PREFIX}}-<N>: <human summary>` with **NO AI attribution** — no `Co-Authored-By`, no "Generated with Claude". Push, then `gh pr create --draft`, link the issue, and state "no UI surface" for backend work. For UI: commit before/after screenshots and verify in an **isolated** headless browser, never a shared one.
+
+## Gate sizing — pick by PR risk
+
+- **LIGHT** (test-only, doc/comment-only, single-file purely additive, rename, config): 2 review dimensions on the balanced model, **no top-model verdict**. Finalize on green.
+- **REDUCED** (standard endpoint or hardening; not money, auth, or concurrency): 3 balanced-model dimensions + 1 verifier per finding + **one top-model `high` QA verdict** (not `xhigh`) + one balanced-model security scan.
+- **FULL** (money movement, auth/security, concurrency core): 5 dimensions + up to 2 verifiers per finding + top-model QA verdict + top-model security verdict. **`xhigh` only here.**
+
+Implementation effort: balanced-model `medium` by default; `high` only on a money or security surface, or after a failed attempt.
+
+**Your ticket's rung may already be escalated.** Read the `strategy:` field on the ticket's `LOOP-PLAN` marker before you pick a gate. Under `LOOP_STRATEGY=auto` the rung ratchets UP — never down — on every QA bounce, confirmed blocking finding, human change request, or failed attempt. If you are working a ticket that bounced, you owe it the stronger gate, not the one its risk class started at. When you trigger an escalation yourself (a failed attempt, a confirmed blocking finding), write the new rung back into the marker and say why. See [[feedback-loop-strategy-profiles]].
+
+## MANDATORY FINALIZE
+
+**Your turn is NOT done until all of this happens in the SAME turn and you return the status line. Never stop after the gate.**
+
+A gate produces review and verdict WRITEUPS. Those are INTERMEDIATE artifacts, never your final message. **If your last output is a review or verdict writeup, you have FAILED to finalize.** After the gate passes you must still do all of:
+
+(a) `gh pr ready <N>` — the PR was a draft until now ([[feedback-draft-until-gated]]).
+(b) Transition the issue → {{REVIEW_STATUS}}.
+(c) Post a comment on the issue: the PR link plus a one-paragraph QA verdict.
+(d) Notify the owner with the ticket and PR links.
+(e) Append `{repo:"{{REPO}}",number:<N>,issue:"{{ISSUE_PREFIX}}-<N>"}` to `.pr-feedback-state`. The orchestrator rebuilds this registry authoritatively, so your append is a convenience, not the source of truth ([[feedback-pr-registry-race]]).
+
+Return exactly: `{{ISSUE_PREFIX}}-<N>: <IN_REVIEW url | BLOCKED reason>` plus the PR number.
+
+## Timebox and blockers
+
+If it will not converge in ~3 honest attempts: push a coherent draft, transition the issue to {{BLOCKED_STATUS}} with a comment naming the concrete blocker and what would unblock it, and report. Any TODO your diff introduces opens a backlog ticket. **Never weaken a test or skip a gate to "finish".**

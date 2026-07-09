@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# Level-triggered reconciler (Plane): every merged loop PR -> its ticket moved to "Merged".
+# The PR watcher is edge-triggered and only bookkeeps merges it witnesses; this pass compares ACTUAL
+# state and repairs anything the watcher missed. See feedback/reconcile-tracker-vs-github.md.
+#
+# Idempotent and error-tolerant. Emits ONE line per ticket it moves and stays silent when everything
+# is in sync, so it can run under the harness's Monitor as a self-triggering background reconciler.
+#
+# Placeholders substituted at init time:
+#   {{ENV_FILE}}      -> $MEM/.env   (PLANE_API_KEY, PLANE_BASE_URL, PLANE_WORKSPACE_SLUG, PLANE_PROJECT_ID)
+#   {{REPOS}}         -> space-separated "owner/repo" list
+#   {{GH_AUTHOR}}     -> the GitHub login the loop commits as
+#   {{ISSUE_PREFIX}}  -> tracker issue prefix, e.g. ABC (branch names embed "abc-123")
+#
+# Cadence:  INTERVAL=120 ./reconcile-merged.sh     (default 120s)
+# Once:     ONCE=1 ./reconcile-merged.sh
+
+set -uo pipefail
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+ENV_FILE="{{ENV_FILE}}"
+REPOS="{{REPOS}}"
+AUTHOR="{{GH_AUTHOR}}"
+ISSUE_PREFIX="{{ISSUE_PREFIX}}"
+INTERVAL="${INTERVAL:-120}"
+
+# shellcheck disable=SC1090
+set -a; . "$ENV_FILE" 2>/dev/null; set +a
+BASE="${PLANE_BASE_URL:-}/v1/workspaces/${PLANE_WORKSPACE_SLUG:-}/projects/${PLANE_PROJECT_ID:-}"
+
+reconcile_once() {
+  [ -z "${PLANE_API_KEY:-}" ] && { echo "[reconcile] ERROR: PLANE_API_KEY missing from $ENV_FILE" >&2; return 1; }
+
+  # Merged loop PRs across every target repo -> the set of issue sequence numbers.
+  local mq=""
+  for REPO in $REPOS; do
+    local out
+    out="$(gh pr list --repo "$REPO" --author "$AUTHOR" --state merged --json headRefName --limit 120 2>/dev/null)" || continue
+    local seqs
+    seqs="$(ISSUE_PREFIX="$ISSUE_PREFIX" python3 -c '
+import json, os, re, sys
+pat = re.compile(re.escape(os.environ["ISSUE_PREFIX"]) + r"-(\d+)", re.I)
+out = set()
+for p in json.load(sys.stdin):
+    m = pat.search(p.get("headRefName") or "")
+    if m: out.add(m.group(1))
+print(" ".join(sorted(out, key=int)))
+' <<< "$out" 2>/dev/null)" || continue
+    mq="$mq $seqs"
+  done
+  mq="$(echo "$mq" | tr ' ' '\n' | grep -v '^$' | sort -u | tr '\n' ' ')"
+  [ -z "${mq// /}" ] && return 0
+
+  KEY="$PLANE_API_KEY" BASE="$BASE" MQ="$mq" python3 <<'PY'
+import os, json, time, urllib.request, urllib.error
+
+key, base, mq = os.environ["KEY"], os.environ["BASE"], os.environ["MQ"]
+merged = set(mq.split())
+
+def get(url):
+    req = urllib.request.Request(url, headers={"X-Api-Key": key, "Accept": "application/json"})
+    return json.load(urllib.request.urlopen(req, timeout=30))
+
+def patch(uuid, state_id):
+    req = urllib.request.Request(
+        f"{base}/issues/{uuid}/",
+        data=json.dumps({"state": state_id}).encode(),
+        headers={"X-Api-Key": key, "Content-Type": "application/json"},
+        method="PATCH")
+    urllib.request.urlopen(req, timeout=30)
+
+try:
+    states = get(f"{base}/states/")["results"]
+    by_id = {s["id"]: s for s in states}
+    # Prefer a state literally named "Merged"; otherwise the first completed-group state.
+    target = next((s for s in states if s["name"].lower() == "merged"), None) \
+             or next((s for s in states if s.get("group") == "completed"), None)
+    if not target:
+        print("[reconcile] no Merged or completed state on this project — nothing to do", flush=True)
+        raise SystemExit(0)
+
+    # These states already mean "done" — never drag a ticket backwards out of one.
+    DONE = {"merged", "done", "deployed", "ready for qa", "cancelled", "canceled"}
+
+    issues, cursor = [], "100:0:0"
+    while True:
+        page = get(f"{base}/issues/?per_page=100&cursor={cursor}")
+        issues += page["results"]
+        if not page.get("next_page_results"):
+            break
+        cursor = page["next_cursor"]
+
+    for issue in issues:
+        seq = str(issue.get("sequence_id"))
+        if seq not in merged:
+            continue
+        cur = by_id.get(issue["state"], {})
+        if (cur.get("name") or "").lower() in DONE:
+            continue
+        patch(issue["id"], target["id"])
+        print(f"[reconcile] #{seq}: PR merged on GitHub -> ticket moved to {target['name']}", flush=True)
+        time.sleep(0.3)   # throttle: Plane 429s under a burst
+except urllib.error.HTTPError as e:
+    print(f"[reconcile] transient HTTP {e.code}: {e.reason}", flush=True)
+except Exception as e:
+    print(f"[reconcile] transient error: {e}", flush=True)
+PY
+}
+
+if [ "${ONCE:-0}" = "1" ]; then reconcile_once; exit 0; fi
+while true; do reconcile_once; sleep "$INTERVAL"; done

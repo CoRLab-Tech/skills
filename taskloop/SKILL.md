@@ -49,15 +49,21 @@ Provider details live in `references/providers/<name>.md`. Read only the one mat
 Per-project, under `~/.claude/projects/<slugified-cwd>/memory/`:
 
 ```
-.env                            # API keys, project IDs, chmod 600
+.env                            # API keys, project IDs, LOOP_STRATEGY, chmod 600
 .monitor-state                  # ephemeral, last queue snapshot
 .pr-feedback-state              # PR registry (repo+number+issue, written at gh pr create) + per-PR last-seen feedback timestamps; drives sweep/merge/WIP-cap; survives stop/start
 .queue-plan                     # last LOOP-PLAN triage + queue signature (ids/titles/desc-hashes/human-comment counts — never the loop's own plan comments)
 monitor.sh                      # rendered from provider template
+monitor-prs.sh                  # the loop's own eyes on its PRs (merge/comment/CI deltas)
+reconcile-merged.sh             # level-triggered repair of tickets the PR watcher's edge trigger missed (Plane)
+review-recall.sh                # cron: periodic ping listing review-ready PRs still unmerged
 hook-agent-routing.mjs          # PreToolUse gate: upgrades under-modeled [LOOP-AGENT] spawns (model-effort-routing rule)
+targeted-regate.mjs             # Workflow script for fix-round re-gates (targeted-regate-on-fixes rule)
 MEMORY.md                       # index — loaded into every conversation
+agent-brief.md                  # condensed startup brief spawned agents read INSTEAD of the full memory set
 autonomous-loop.md              # loop spec (provider-agnostic)
 restart-instructions.md         # "start" recipe
+model-usage-log.md              # per-task tier → model → effort ledger; measured gate costs
 feedback/<slug>.md              # universal + project-specific rules
 ```
 
@@ -73,7 +79,7 @@ feedback/<slug>.md              # universal + project-specific rules
 
 ## Universal feedback rules
 
-36 rules ship as assets. `init` copies them into the project's `memory/feedback/` and links each one from `MEMORY.md`. These rules are provider-neutral and the loop reads them every tick.
+47 rules ship as assets. `init` copies them into the project's `memory/feedback/` and links each one from `MEMORY.md`. These rules are provider-neutral and the loop reads them every tick.
 
 The rules list (see `assets/feedback/`):
 
@@ -115,6 +121,17 @@ The rules list (see `assets/feedback/`):
 | `queue-triage-plan.md` | On every queue change the loop autonomously marks each ready ticket with LOOP-PLAN (order / group / depends-on / tier); pull follows the plan |
 | `model-effort-routing.md` | Agents get model+effort by task tier (light/standard/deep/frontier); every go/no-go verdict runs on the profile's top model |
 | `telegram-notify-owner.md` | Telegram pings at attention-worthy moments — blocked, review-ready with PR links, or gone idle |
+| `loop-strategy-profiles.md` | `LOOP_STRATEGY` (auto/fast/balanced/heavy) in `.env` sets routing, gate rigor, re-gate depth, and WIP; `auto` starts each ticket at the cheapest honest rung and ratchets up on a QA bounce |
+| `cost-conscious-gating.md` | Gate rigor and model scale to PR risk; top-model verdicts only, `xhigh` only on money/auth/concurrency |
+| `token-hygiene.md` | Model-match every task, keep a warm light-model ops-helper, hold the prompt cache stable; observe cheap, judge dear |
+| `efficiency-levers.md` | The remaining safe token/wall-clock levers — and the hard quality floor never to cut |
+| `trust-local-gates-not-remote-ci.md` | Finalize on local foreground gates, not the PR branch's remote CI; `main` post-merge stays the backstop |
+| `draft-until-gated.md` | Every PR is born a draft; ready-for-review, the review transition, and the owner ping are one event |
+| `never-self-halt-loop.md` | Only the owner's `stop` halts the loop; never speak from a remembered queue; self-heal a monitor that proved a miss |
+| `continuous-flow-from-ready.md` | Continuous flow, not waves — a ticket blocked only on the loop's own open PR is doable now by stacking |
+| `block-stuck-tickets-visibly.md` | An unactionable ticket gets a WHY comment and moves to Blocked — never a silent stall |
+| `pr-registry-race.md` | The orchestrator owns `.pr-feedback-state` and rebuilds it from `gh pr list`; agent appends are advisory |
+| `reconcile-tracker-vs-github.md` | The PR watcher is edge-triggered; a periodic level-triggered reconcile repairs what it missed |
 
 ## Adding a new provider
 
@@ -124,6 +141,7 @@ To support a new tracker (GitHub Issues, Asana, ClickUp, …):
 2. Create `references/providers/<name>.md` with env, queries, and recipes.
 3. Add a `monitor-<name>.sh.tmpl` to `assets/`.
 4. Add the provider to the `init` AskUserQuestion options.
+5. Optionally add a `reconcile-merged-<name>.sh.tmpl` (see the Plane one). Without it the `reconcile-tracker-vs-github` rule still applies — the loop just runs the reconcile inline each sweep through the provider's transition recipe instead of as a background script.
 
 The loop spec template is already provider-neutral; only the adapter changes.
 

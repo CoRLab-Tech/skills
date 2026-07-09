@@ -14,6 +14,11 @@
 #                        blocked=true marks fail-gracefully parks, excluded from the WIP cap)
 #   {{STATE_FILE}}    -> $MEM/.pr-monitor-state
 #
+# REGISTRY CORRUPTION: parallel agents appending concurrently can clobber the file — the known bad
+# shape is the whole object wrapped in a list, `[{"prs":[...]}]`. This watcher unwraps that shape and
+# de-duplicates entries so a race never blinds it, and emits a `registry corrupt` line so the loop
+# rebuilds the registry authoritatively from `gh pr list`. See feedback/pr-registry-race.md.
+#
 # Override polling cadence with: INTERVAL=30 ./monitor-prs.sh
 
 set -o pipefail
@@ -36,6 +41,30 @@ const fs = require("fs");
 const { execFileSync } = require("child_process");
 let reg;
 try { reg = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch (e) { process.exit(0); }
+
+// Tolerate a registry corrupted by concurrent agent appends. Two known shapes: the object wrapped in
+// a list, and a list of such wrappers. Unwrap, then de-duplicate by repo#number — a raced append can
+// also duplicate an entry, which would double every emitted line for that PR.
+let corrupt = false;
+if (Array.isArray(reg)) {
+  corrupt = true;
+  reg = { prs: reg.flatMap(r => (r && Array.isArray(r.prs)) ? r.prs : (r && r.repo ? [r] : [])) };
+}
+if (!reg || !Array.isArray(reg.prs)) process.exit(0);
+{
+  const seen = new Set();
+  const deduped = [];
+  for (const pr of reg.prs) {
+    if (!pr || !pr.repo || !pr.number) continue;
+    const key = `${pr.repo}#${pr.number}`;
+    if (seen.has(key)) { corrupt = true; continue; }
+    seen.add(key);
+    deduped.push(pr);
+  }
+  reg.prs = deduped;
+}
+// Signalled on stdout (stderr is discarded below); the bash side strips this line off the signature.
+if (corrupt) process.stdout.write("__CORRUPT__\n");
 // Previous per-PR lines: a transient gh failure must NOT emit a false delta (FETCH_ERROR then a
 // flip-back). On error we carry the PR'\''s previous line forward — no delta, no noise. A PR with no
 // previous line and a failing fetch is simply omitted until the first successful read.
@@ -63,6 +92,18 @@ for (const pr of prs) {
 }
 process.stdout.write(lines.sort().join("\n"));
 ' "$REGISTRY_FILE" "$STATE_FILE" 2>/dev/null || true)
+
+  # A corrupt registry is a one-shot event, not a per-tick alarm: emit once, re-arm only after it heals.
+  if [ "${SIG%%$'\n'*}" = "__CORRUPT__" ]; then
+    SIG="${SIG#__CORRUPT__}"
+    SIG="${SIG#$'\n'}"
+    if [ ! -f "$STATE_FILE.corrupt" ]; then
+      echo "[pr-monitor] registry corrupt (concurrent agent appends) — rebuild $REGISTRY_FILE from \`gh pr list\`"
+      : > "$STATE_FILE.corrupt"
+    fi
+  else
+    rm -f "$STATE_FILE.corrupt"
+  fi
 
   PREV=""
   [ -f "$STATE_FILE" ] && PREV=$(cat "$STATE_FILE")

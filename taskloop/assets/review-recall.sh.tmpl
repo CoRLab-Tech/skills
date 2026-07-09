@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# review-recall.sh — periodic reminder of every loop PR that is ready for review and still unmerged,
+# so no review-ready PR silently ages out. Standalone: runs from cron, survives Claude sessions.
+#
+# Provider-agnostic by design: it reads GitHub, not the tracker. A PR that is open and NOT a draft is
+# exactly "gates passed, waiting on the owner" (see feedback/draft-until-gated.md), which is the thing
+# worth nagging about. That makes this script identical for Linear / Jira / Plane.
+#
+# Placeholders substituted at init time:
+#   {{REPOS}}        -> space-separated "owner/repo" list (one entry for single-repo projects)
+#   {{GH_AUTHOR}}    -> the GitHub login the loop commits as
+#   {{PROJECT_NAME}} -> passed to tg-notify as -p, so the ping is attributed to this project
+#   {{START_HOUR}}   -> first hour to ping (24h local, e.g. 9)
+#   {{END_HOUR}}     -> first hour to stop (24h local, e.g. 18 — 18:00 does not ping)
+#
+# Install (every 2 hours during working hours):
+#   0 {{START_HOUR}}-{{END_HOUR}}/2 * * * $MEM/review-recall.sh
+# Run once to test:  ./review-recall.sh --now
+
+set -o pipefail
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"   # gh lives here on macOS/homebrew
+
+REPOS="{{REPOS}}"
+AUTHOR="{{GH_AUTHOR}}"
+PROJECT="{{PROJECT_NAME}}"
+NOTIFY="$HOME/.claude/bin/tg-notify"
+
+# Working-hours guard (belt and suspenders; cron also gates the hours). --now bypasses it.
+if [ "${1:-}" != "--now" ]; then
+  HOUR=$((10#$(date +%H)))
+  [ "$HOUR" -lt {{START_HOUR}} ] && exit 0
+  [ "$HOUR" -ge {{END_HOUR}} ] && exit 0
+fi
+
+command -v gh >/dev/null 2>&1 || { echo "[review-recall] error: gh CLI not found in PATH" >&2; exit 1; }
+[ -x "$NOTIFY" ] || { echo "[review-recall] error: $NOTIFY not found or not executable" >&2; exit 1; }
+
+PARTS=""
+COUNT=0
+for REPO in $REPOS; do
+  # --draft=false keeps drafts out: those are still in the loop's gates, not the owner's queue.
+  LINES=$(gh pr list --repo "$REPO" --author "$AUTHOR" --state open --draft=false \
+            --json number,url --jq '.[] | "\(.number)\t\(.url)"' 2>/dev/null) || continue
+  [ -z "$LINES" ] && continue
+  while IFS=$'\t' read -r NUM URL; do
+    [ -z "$NUM" ] && continue
+    COUNT=$((COUNT + 1))
+    # Keep each entry short — the ping must read at a glance.
+    PARTS="$PARTS · <a href=\"$URL\">#$NUM</a>"
+  done <<< "$LINES"
+done
+
+[ "$COUNT" -eq 0 ] && exit 0
+
+"$NOTIFY" -p "$PROJECT" "⏰ Review recall — $COUNT PR(s) ready and waiting${PARTS}"
