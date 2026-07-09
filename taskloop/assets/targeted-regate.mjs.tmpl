@@ -1,0 +1,80 @@
+export const meta = {
+  name: 'targeted-regate',
+  description: 'Cost-optimized re-gate: re-review ONLY the fix-affected dimensions + hunk-scoped verify + full-diff top-model verdicts',
+  phases: [
+    { title: 'Review', detail: 'only fix-affected dimensions', model: '{{BALANCED_MODEL}}' },
+    { title: 'Verify', detail: 'hunk-scoped verify', model: '{{BALANCED_MODEL}}' },
+    { title: 'Verdict', detail: 'QA + security, FULL diff', model: '{{TOP_MODEL}}' },
+  ],
+}
+// The re-gate half of the feedback/targeted-regate-on-fixes.md rule. The FIRST gate on a PR is always
+// full; this script runs the LATER rounds, after a fix. It re-reviews only the dimensions that were
+// blocking last round (the fix touched those), verifies each finding against an isolated per-file hunk
+// rather than the whole diff, and then — non-negotiably — runs both go/no-go verdicts on the FULL diff.
+// That last part is the quality floor: the targeted review cannot see a cross-cutting regression the fix
+// introduced in a dimension it skipped, so the full-diff verdicts are what catch it.
+//
+// Invoke with Workflow({scriptPath: "<MEM>/targeted-regate.mjs", args: {...}}):
+//   pr           PR number
+//   issue        tracker issue key (e.g. ABC-123)
+//   diffPath     path to the full PR diff on disk
+//   hunkDir      dir of per-file diffs, one per changed file (see hunkPath below for the naming)
+//   repoDir      worktree path, for reading merged context
+//   acceptance   the ticket's acceptance criteria + scope, as text
+//   dims         [{key, focus}] — ONLY the dimensions that had a blocking finding last round
+//   blockingBar  one sentence defining what counts as "blocking" on this project
+//   round        re-gate round number (2, 3, ...)
+//   verdictEffort  'xhigh' for money/auth/concurrency PRs, else 'high' (cost-conscious-gating rule)
+const A = typeof args === 'string' ? JSON.parse(args) : (args || {})
+const { pr, issue, diffPath, hunkDir, repoDir, acceptance, dims, blockingBar, round } = A
+const verdictEffort = A.verdictEffort || 'high'
+
+const FINDINGS = { type: 'object', additionalProperties: false, properties: { findings: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { severity: { type: 'string', enum: ['blocking', 'major', 'minor', 'nit'] }, file: { type: 'string' }, line: { type: 'integer' }, summary: { type: 'string' }, rationale: { type: 'string' } }, required: ['severity', 'file', 'summary', 'rationale'] } } }, required: ['findings'] }
+const VERDICT = { type: 'object', additionalProperties: false, properties: { status: { type: 'string', enum: ['CONFIRMED', 'PLAUSIBLE', 'REFUTED'] }, blocking: { type: 'boolean' }, reason: { type: 'string' } }, required: ['status', 'blocking', 'reason'] }
+const QA = { type: 'object', additionalProperties: false, properties: { verdict: { type: 'string', enum: ['pass', 'fail'] }, acceptance_met: { type: 'array', items: { type: 'string' } }, gaps: { type: 'array', items: { type: 'string' } }, summary: { type: 'string' } }, required: ['verdict', 'gaps', 'summary'] }
+
+const ctxFull = `PR #${pr} implements tracker issue ${issue}. This is a TARGETED RE-GATE (round ${round}) after a fix. Full diff at ${diffPath} — Read it. Repo at ${repoDir} for merged context.\nAcceptance and scope:\n${acceptance}`
+function hunkPath(file) { return `${hunkDir}/${file.split('/').join('__')}.diff` }
+
+phase('Review')
+// Re-review ONLY the dimensions whose findings were blocking last round (the fix touched these);
+// the full-diff verdicts below catch any cross-cutting regression in the untouched dimensions.
+const reviewed = await parallel(dims.map((d) => () =>
+  agent(`[LOOP-AGENT issue:${issue} tier:standard verdict:no]\nYou are a precise reviewer re-gating a fix. ${ctxFull}\n\nRe-review ONLY the ${d.key} dimension — the dimension a prior blocking finding was in. Focus: ${d.focus}\n\nThe fix claims to resolve the prior finding here. Hunt for: (a) the prior defect NOT actually resolved, (b) a NEW defect the fix introduced in this dimension, (c) an incomplete fix. Return up to 8 concrete findings, each with a real failure scenario in 'rationale'. Empty array if this dimension is now clean. ${blockingBar}`,
+    { label: `review:${d.key}`, phase: 'Review', model: '{{BALANCED_MODEL}}', effort: 'high', schema: FINDINGS })))
+
+const all = reviewed
+  .map((r, i) => ({ r, dim: dims[i].key }))
+  .filter((x) => x.r && Array.isArray(x.r.findings))
+  .flatMap((x) => x.r.findings.map((f) => ({ ...f, dim: x.dim })))
+log(`Targeted review (${dims.map((d) => d.key).join(', ')}) surfaced ${all.length} candidate finding(s)`)
+
+phase('Verify')
+// Hunk-scoped: each verifier Reads ONLY its finding's per-file hunk, not the full diff.
+const verified = all.length ? await parallel(all.map((f) => () =>
+  agent(`[LOOP-AGENT issue:${issue} tier:standard verdict:no]\nYou are an adversarial verifier of a single re-gate finding on ${issue}.\n\nCOST NOTE: Read ONLY the isolated per-file hunk for this finding at ${hunkPath(f.file)} (the diff for just ${f.file}). If you need surrounding context, Read that one file in ${repoDir} — but do NOT Read the full diff at ${diffPath}.\n\nReviewer (${f.dim}) claims:\nfile: ${f.file}${f.line ? ':' + f.line : ''} — ${f.summary}\nrationale: ${f.rationale}\n\nReturn CONFIRMED (name the trigger, quote the line), PLAUSIBLE, or REFUTED (quote the proof). ${blockingBar} Default REFUTED when uncertain.`,
+    { label: `verify:${f.dim}:${f.file}`, phase: 'Verify', model: '{{BALANCED_MODEL}}', effort: 'high', schema: VERDICT }).then((v) => ({ ...f, verdict: v })))) : []
+
+const confirmedBlocking = verified.filter((f) => f && f.verdict && f.verdict.status !== 'REFUTED' && f.verdict.blocking)
+log(`Verify: ${confirmedBlocking.length} confirmed BLOCKING`)
+
+phase('Verdict')
+// Both verdicts ALWAYS read the FULL diff — the safety net for cross-cutting regressions in the
+// dimensions the targeted review skipped. Non-negotiable per the cost/quality tradeoff.
+const [qa, sec] = await parallel([
+  () => agent(`[LOOP-AGENT issue:${issue} tier:frontier verdict:yes]\nYou are the QA gate, reading the FULL diff. ${ctxFull}\n\nThe fix targeted the prior blocking finding(s). Does PR #${pr} NOW satisfy EVERY acceptance criterion and stay in scope, with the prior finding(s) genuinely resolved AND no regression introduced anywhere — including dimensions the targeted review did not re-run? List criteria met, gaps, pass/fail.`,
+    { label: 'qa-verdict', phase: 'Verdict', model: '{{TOP_MODEL}}', effort: verdictEffort, schema: QA }),
+  () => agent(`[LOOP-AGENT issue:${issue} tier:frontier verdict:yes]\nYou are the security gate, reading the FULL diff. ${ctxFull}\n\nRead the full diff. Is there any real money / security / correctness defect REMAINING (a prior finding not truly fixed) or NEWLY INTRODUCED by the fix, anywhere in the diff and not just in the targeted dimension? pass/fail with specifics. 'fail' only for a real defect.`,
+    { label: 'security-verdict', phase: 'Verdict', model: '{{TOP_MODEL}}', effort: verdictEffort, schema: QA }),
+])
+
+return {
+  pr, issue, mode: 'targeted', round,
+  dims: dims.map((d) => d.key),
+  candidateCount: all.length,
+  confirmedBlocking,
+  allVerified: verified.map((f) => f && { dim: f.dim, file: f.file, severity: f.severity, summary: f.summary, status: f.verdict && f.verdict.status, blocking: f.verdict && f.verdict.blocking }),
+  qa,
+  security: sec,
+  pass: confirmedBlocking.length === 0 && qa && qa.verdict === 'pass' && sec && sec.verdict === 'pass',
+}

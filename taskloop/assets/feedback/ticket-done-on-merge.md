@@ -12,6 +12,7 @@ The tracker must mirror reality: the moment a loop-owned PR is merged — whethe
 **How to apply:**
 - The per-tick PR sweep ([[feedback-watch-pr-comments]]) checks each PR in the loop's registry (`.pr-feedback-state`, which maps repo + PR number → issue key) for a state change to merged: `gh pr view <num> -R <owner>/<repo> --json state,mergedAt,url`. The registry entry names the issue directly — no fuzzy cross-referencing needed.
 - Resolve the target state once per project by enumerating the provider's states: prefer a state named `Merged` (case-insensitive); otherwise pick the completed-group state (`Done` on Linear/Plane stock workflows, the done-category status on Jira). Cache the choice.
+- **Where a `Merged` state exists, stop there.** Do not push the ticket on to `Ready for QA`, `Deployed`, or `Done` — those belong to the owner's acceptance flow, and a loop that claims them takes a decision that is not its to take. Only fall back to a completed state when the workflow has no `Merged`.
 - Transition via the provider's transition recipe and post a closing comment on the issue: `PR merged: <url>` (+ merge commit SHA).
 - If the tracker issue was already moved manually, skip silently — never fight a human's transition.
 - Merged-PR entries are then pruned from `.pr-feedback-state`.

@@ -1,0 +1,37 @@
+---
+name: model-usage-log
+description: "Per-task ledger of tier → model → effort, and the measured cost of each gate shape — the telemetry that makes right-sizing auditable instead of assumed"
+metadata:
+  type: reference
+---
+
+# Model + effort usage log — {{PROJECT_NAME}}
+
+Appended on every agent and gate spawn. Without this ledger, "we right-sized the routing" is a belief; with it, over-routing shows up as a pattern you can point at.
+
+## Routing policy in force
+
+The tiers, the verdict pin, and never-downgrade come from [[feedback-model-effort-routing]]. The concrete model ids come from `feedback/model-routing-profile.md`. Which gate shape applies comes from [[feedback-loop-strategy-profiles]] and [[feedback-cost-conscious-gating]].
+
+- **frontier** (money/security/concurrency core, blocking fixes) → top model. Verdicts at `xhigh` **only here**.
+- **deep** (money *math*, a new service skeleton, an external adapter, a saga or concurrency core, an auth surface) → deep model at `high`. A task that mirrors an already-merged sibling pattern is **standard**, not deep — the design decision is already made.
+- **standard** (policy layer, frontend fix, hardening follow-up, review-comment fix, pattern-mirroring endpoint) → balanced model at `medium`; `high` only on a money or security surface, or after a failed attempt.
+- **light** (mechanical, trivial) → light model at `low`. **Actually use it**: comment/JSDoc-only PRs, doc/config/rename, single-line or test-only tweaks, fixture data. These also get the light gate.
+- **ops / bookkeeping** (merge sweeps, tracker transitions, registry rebuilds, id resolution, status counts) → the persistent warm light-model helper, reused via `SendMessage` ([[feedback-token-hygiene]]). The orchestrator keeps the judgment and never spends top-model reasoning on transition mechanics.
+- **gates** (per PR) → review dimensions and verifiers on the balanced model at `high`; QA and security **verdicts** on the top model, `xhigh` only for money/auth/concurrency.
+
+Implementation effort is enforced mechanically by the `PreToolUse` hook via the `[LOOP-AGENT issue:… tier:… verdict:…]` marker. Gate agents pass model and effort explicitly.
+
+## Measured gate costs
+
+Record every A/B here rather than re-deriving it. A targeted fix re-gate ([[feedback-targeted-regate-on-fixes]]) measured **−49.4%** against a full re-gate on the same PR with an identical PASS verdict (1,244,444 → 629,239 tokens). Full-gate reference scale is ~0.6–1.5M tokens per round.
+
+| PR | Gate shape | Agents | Tokens | Verdict |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## Per-task ledger
+
+| Date | Ticket | PR | Task | Tier | Model | Effort | Gate |
+|---|---|---|---|---|---|---|---|
+| — | — | — | — | — | — | — | — |

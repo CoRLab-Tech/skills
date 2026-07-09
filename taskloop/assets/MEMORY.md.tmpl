@@ -1,7 +1,9 @@
 # {{PROJECT_NAME}} — taskloop memory ({{PROVIDER}})
 
 - [Loop spec](autonomous-loop.md) — provider-agnostic 13-step cycle
+- [Agent brief](agent-brief.md) — the ONE file spawned implementation agents read at startup; keep it byte-stable (prompt cache)
 - [Restart instructions](restart-instructions.md) — when user says "start"
+- [Model usage log](model-usage-log.md) — per-task tier → model → effort ledger and measured gate costs
 - [No AI attribution](feedback/no-ai-attribution.md) — never add Co-Authored-By / "Generated with Claude" to commits or PRs
 - [Pull main each task](feedback/pull-main-each-task.md) — branch from fresh `origin/main` every iteration, never from stale current branch
 - [Playwright verification required](feedback/playwright-testing.md) — UI changes verified via Playwright MCP before any PR
@@ -38,3 +40,14 @@
 - [Queue triage plan](feedback/queue-triage-plan.md) — on every queue change the loop autonomously marks each ready ticket with LOOP-PLAN (order / group / depends-on / tier); pull follows the plan
 - [Model & effort routing](feedback/model-effort-routing.md) — agents routed by task tier; verdicts always on the most capable model at high effort
 - [Telegram pings to the owner](feedback/telegram-notify-owner.md) — blocked / review-ready (all PR links) / one idle ping, via ~/.claude/bin/tg-notify with Keychain creds
+- [Loop strategy profiles](feedback/loop-strategy-profiles.md) — `LOOP_STRATEGY` (auto/fast/balanced/heavy) in `.env`; `auto` starts each ticket at the cheapest honest rung and ratchets up on a QA bounce, never down
+- [Cost-conscious gating](feedback/cost-conscious-gating.md) — gate rigor and model scale to PR risk; top-model verdicts only, `xhigh` only on money/auth/concurrency
+- [Token hygiene](feedback/token-hygiene.md) — model-match every task, warm light-model ops-helper, byte-stable prompts; observe cheap, judge dear
+- [Efficiency levers](feedback/efficiency-levers.md) — the remaining safe token/wall-clock levers, and the hard quality floor never to cut
+- [Trust local gates, not remote CI](feedback/trust-local-gates-not-remote-ci.md) — finalize on local foreground gates for PR branches; `main` post-merge stays the backstop
+- [Draft until gated](feedback/draft-until-gated.md) — every PR is born a draft; ready-for-review + review transition + owner ping are ONE event
+- [Never self-halt the loop](feedback/never-self-halt-loop.md) — only the owner's `stop` halts it; never speak from a remembered queue; self-heal a proved-dead monitor
+- [Continuous flow from ready](feedback/continuous-flow-from-ready.md) — no waves; a ticket blocked only on the loop's own open PR is doable now by stacking
+- [Block stuck tickets visibly](feedback/block-stuck-tickets-visibly.md) — an unactionable ticket gets a WHY comment and moves to Blocked, never a silent stall
+- [PR registry race](feedback/pr-registry-race.md) — the orchestrator owns `.pr-feedback-state` and rebuilds it from `gh pr list`; agent appends are advisory
+- [Reconcile tracker vs GitHub](feedback/reconcile-tracker-vs-github.md) — the PR watcher is edge-triggered; a periodic level-triggered reconcile repairs what it missed

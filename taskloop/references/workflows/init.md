@@ -86,7 +86,15 @@ After the provider interview:
    - **Custom** — follow-up questions: top model (`fable`/`opus`), deep floor (`opus`/`sonnet`), balanced floor (`sonnet`/`opus`).
 
    Record the answers for the hook render below and write `$MEM/feedback/model-routing-profile.md` (standard feedback frontmatter, name `feedback-model-routing-profile`) stating: top / deep / balanced / light models, the date, and the note that the tiers, the verdict-pin, and never-downgrade come from the universal `model-effort-routing` rule — only the model ids are per-project. Index it in `MEMORY.md`.
-5. **Anything else worth saving as a project rule?** — open text. If non-empty, immediately call `add-rule` workflow to create `feedback/<slug>.md`.
+5. **Loop strategy** — ask via `AskUserQuestion` ("How rigorous should the loop be by default?"), per `assets/feedback/loop-strategy-profiles.md`:
+   - **auto (Recommended, default)** — each ticket starts at the cheapest rung that can honestly do it (`fast` unless a money/auth/concurrency/cross-cutting signal fires) and ratchets up one rung on every QA bounce, confirmed blocking finding, human change request, or failed attempt. Never ratchets down.
+   - **balanced** — a constant risk-scaled gate on every ticket.
+   - **heavy** — every check on every PR; for money / auth / concurrency-heavy codebases.
+   - **fast** — reduced gate everywhere with NO escalation, owner accepts the risk; for prototypes and spikes.
+
+   Write the answer as `LOOP_STRATEGY` in `.env`. Tell the user they can switch later by editing that var or by saying "switch to auto/fast/balanced/heavy" mid-run, and that any single ticket can be pinned with a `strategy:` field in its `LOOP-PLAN` marker.
+6. **Review recall** — ask whether to install the `review-recall.sh` cron (a periodic Telegram ping listing review-ready PRs still unmerged). If yes, ask for the working-hours window (default 9–18). Default: yes.
+7. **Anything else worth saving as a project rule?** — open text. If non-empty, immediately call `add-rule` workflow to create `feedback/<slug>.md`.
 
 ## Step 5 — Write files
 
@@ -127,6 +135,14 @@ PLANE_REVIEW_STATUS="In Review"
 PLANE_BLOCKED_STATUS="Blocked"
 ```
 
+Provider-neutral vars, appended for every provider:
+
+```
+LOOP_STRATEGY=auto              # auto | fast | balanced | heavy — read at the top of every tick
+GH_AUTHOR=<the login the loop commits as>
+REPOS="<owner/repo> [<owner/repo> ...]"
+```
+
 Then `chmod 600 "$MEM/.env"`.
 
 ### `monitor.sh`
@@ -160,6 +176,30 @@ Then install the PreToolUse hook in the **project's** `.claude/settings.local.js
 
 (`<MEM>` expanded to the absolute memory-dir path.) Pipe-test before moving on: `echo '{"tool_input":{"prompt":"[LOOP-AGENT issue:X tier:light verdict:yes] t","model":"haiku"}}' | node $MEM/hook-agent-routing.mjs` must emit an `updatedInput` with the profile's TOP model (the verdict pin — holds in every profile); and `echo '{"tool_input":{"prompt":"[LOOP-AGENT issue:X tier:deep verdict:no] t","model":"sonnet"}}' | node $MEM/hook-agent-routing.mjs` must emit the deep-floor model (silent pass-through is also correct when the profile's deep floor IS sonnet). This is the mechanical half of the `model-effort-routing` rule — the marker contract is enforced even when prose is forgotten.
 
+### `targeted-regate.mjs` (the fix-round re-gate)
+
+Render `assets/targeted-regate.mjs.tmpl` substituting `{{TOP_MODEL}}` and `{{BALANCED_MODEL}}` from the Step 4 routing profile. Write to `$MEM/targeted-regate.mjs`. This is the executable half of the `targeted-regate-on-fixes` rule — without it the rule describes a re-gate the loop has no script to run. Invoke it as `Workflow({scriptPath: "<MEM>/targeted-regate.mjs", args: {...}})`; the arg contract is documented at the top of the file.
+
+### `agent-brief.md` (what spawned agents read at startup)
+
+Render `assets/agent-brief.md.tmpl`, substituting `{{PROVIDER}}`, `{{PROJECT_NAME}}`, `{{REPO}}`, `{{ISSUE_PREFIX}}` (the tracker's issue key prefix), `{{BRANCH_PREFIX}}` (the loop's branch namespace), `{{READY_STATUS}}` / `{{REVIEW_STATUS}}` / `{{BLOCKED_STATUS}}`, and `{{TEST_CMD}}` (the project's per-project test command). Write to `$MEM/agent-brief.md`.
+
+Every spawned implementation agent reads THIS instead of `MEMORY.md` + `autonomous-loop.md` + the feedback files. Its bytes must stay stable across spawns or the prompt cache misses on every agent — see `feedback/efficiency-levers.md`.
+
+### `model-usage-log.md`
+
+Render `assets/model-usage-log.md.tmpl` with `{{PROJECT_NAME}}`. Write to `$MEM/model-usage-log.md`. The loop appends one row per agent/gate spawn.
+
+### `reconcile-merged.sh` (Plane only, level-triggered repair)
+
+For the Plane path, render `assets/reconcile-merged-plane.sh.tmpl` substituting `{{ENV_FILE}}` → `$MEM/.env`, `{{REPOS}}`, `{{GH_AUTHOR}}`, `{{ISSUE_PREFIX}}`. Write to `$MEM/reconcile-merged.sh`, `chmod +x`. Smoke-test it once with `ONCE=1 $MEM/reconcile-merged.sh` — it prints nothing when the board is already in sync.
+
+For Linear and Jira there is no script yet; the `reconcile-tracker-vs-github` rule still applies and the loop runs the reconcile inline each sweep via the provider's transition recipe.
+
+### `review-recall.sh` (optional cron)
+
+If the user opted in at Step 4, render `assets/review-recall.sh.tmpl` substituting `{{REPOS}}`, `{{GH_AUTHOR}}`, `{{PROJECT_NAME}}`, `{{START_HOUR}}`, `{{END_HOUR}}`. Write to `$MEM/review-recall.sh`, `chmod +x`, verify with `$MEM/review-recall.sh --now`, then install the crontab line printed in the script's header. It pings only when at least one non-draft loop PR is open, so a quiet board stays quiet.
+
 ### Repo setting — auto-delete merged branches
 
 Enable head-branch auto-delete on every target repo (confirm with the user once):
@@ -172,7 +212,9 @@ gh api -X PATCH repos/<owner>/<repo> -f delete_branch_on_merge=true
 
 Render `assets/MEMORY.md.tmpl` substituting project metadata. The index points to:
 - `autonomous-loop.md`
+- `agent-brief.md`
 - `restart-instructions.md`
+- `model-usage-log.md`
 - All `feedback/*.md` files (universal + any project-specific added in Step 4)
 
 ### `autonomous-loop.md`
@@ -210,9 +252,11 @@ Print a summary:
 ```
 ✅ taskloop initialized for <project name>
    Provider: <Linear|Jira|Plane>
+   Strategy: <fast|balanced|heavy>
    Memory:   ~/.claude/projects/<slug>/memory/
-   Files:    .env (chmod 600), monitor.sh, MEMORY.md, autonomous-loop.md,
-             restart-instructions.md, feedback/ (33 files)
+   Files:    .env (chmod 600), monitor.sh, monitor-prs.sh, hook-agent-routing.mjs,
+             targeted-regate.mjs, MEMORY.md, agent-brief.md, autonomous-loop.md,
+             restart-instructions.md, model-usage-log.md, feedback/ (47 files)
    Next:     run `/taskloop start` to arm the Monitor + ScheduleWakeup,
              or just type "start" in this directory in any future session.
 ```

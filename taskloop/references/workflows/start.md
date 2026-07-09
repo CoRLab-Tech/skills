@@ -51,8 +51,8 @@ The PR watcher polls every PR in `.pr-feedback-state` via `gh` and emits a line 
 
 Call `ScheduleWakeup`:
 
-- `delaySeconds`: `1500` (25 min fallback heartbeat — Monitor is the primary wake signal; this only fires if no event arrives)
-- `reason`: short one-liner like `"Monitor primary wake; 25-min safety heartbeat"`
+- `delaySeconds`: `300` (5 min fallback heartbeat — Monitor is the primary wake signal; this only fires if no event arrives)
+- `reason`: short one-liner like `"Monitor primary wake; 5-min safety heartbeat"`
 - `prompt`: the literal `/loop` invocation from `$MEM/restart-instructions.md` (verbatim, including the leading `/loop ` prefix). This re-enters the `loop` skill which then reads `autonomous-loop.md` and runs one iteration.
 
 ## Step 5 — Confirm
