@@ -6,7 +6,7 @@ One-time per-project setup. Generates the memory directory, config files, monito
 
 - Current working directory is a git repo (or a folder containing per-service repos for monorepos).
 - User has one of: a Linear API key; Jira Cloud credentials (host + email + API token); or a Plane workspace API token (self-hosted or cloud).
-- `gh` CLI is authenticated against the GitHub org that owns the target repo(s).
+- `gh` CLI is authenticated against the GitHub org that owns the target repo(s). For the GitHub Issues provider, `jq` must also be on `PATH`.
 - For Plane: the `plane` MCP server should be registered at user scope for the MCP-first verbs (the curl fallback works without it). See `references/providers/plane.md` → "Prerequisite".
 
 ## Step 1 — Compute the project memory directory
@@ -28,6 +28,7 @@ Ask via `AskUserQuestion`:
 
 - **Linear** — works out of the box; verified end-to-end
 - **Plane** — self-hosted or cloud; MCP-first, verified end-to-end
+- **GitHub Issues** — states as labels, driven entirely by `gh`; no second tracker to authenticate. Recipes documented; **not yet verified end-to-end**
 - **Jira (Cloud)** — recipes documented; not end-to-end tested by the skill author
 
 Save the choice for the rest of the flow. **Read only the relevant `references/providers/<choice>.md`** — do not load the others.
@@ -59,6 +60,20 @@ Verify by hitting the "Verify ready queue" curl (`.../issues/?expand=state&per_p
 
 If the `plane` MCP server is not registered at user scope, offer to add it now (see `references/providers/plane.md` → "Prerequisite"); the loop still works via curl if declined.
 
+### GitHub Issues path
+
+Read `references/providers/github.md`. Then ask `AskUserQuestion` for:
+
+1. **Repo** — `<org>/<repo>` holding the issues. Often the same repo the loop opens PRs against.
+2. **Label names** — defaults `ready` / `in-progress` / `in-review` / `blocked` / `merged`. Accept the defaults unless the repo already uses a different vocabulary.
+
+Verify with the "Verify queue" recipe: exit 0 and a JSON array (possibly `[]`) means auth and repo are good; a non-zero exit means the token or the repo is wrong. Then run `gh label list` and, **after asking** (this mutates the owner's repo), create whichever of the five labels are missing.
+
+Tell the user the two consequences of modelling states as labels, because they are not obvious:
+
+- the loop **never closes an issue** — a merged PR only adds the `merged` label; closing stays the owner's call;
+- therefore the loop must write `Refs #123` in PR bodies, **never** `Closes #123`, and must not create branches with `gh issue develop`. Both would auto-close the issue on merge.
+
 ### Jira Cloud path
 
 Read `references/providers/jira.md`. Then ask `AskUserQuestion` for:
@@ -83,9 +98,30 @@ After the provider interview:
 4. **Model routing profile** — ask via `AskUserQuestion` ("Which model routing profile for this project's agents?"). The ladder has four rungs (light/standard/deep/frontier + verdicts pinned to the top):
    - **High (Recommended, default)** — top = `opus` (verdicts + frontier fold into it), deep = `opus`, balanced = `sonnet`, light = `haiku`. Strong quality at standard cost.
    - **Mythos (extra)** — top = `fable` (the Mythos-class rung above opus) for verdicts + frontier; **deep stays `opus`** — opus keeps its seat; balanced = `sonnet`, light = `haiku`. Maximum judgment quality, extra cost only where it buys something.
-   - **Custom** — follow-up questions: top model (`fable`/`opus`), deep floor (`opus`/`sonnet`), balanced floor (`sonnet`/`opus`).
+   - **Custom** — follow-up questions: the **ladder** (ordered model ids, cheapest first), then top model, deep floor, balanced floor. Every one of the three must be on the ladder.
 
-   Record the answers for the hook render below and write `$MEM/feedback/model-routing-profile.md` (standard feedback frontmatter, name `feedback-model-routing-profile`) stating: top / deep / balanced / light models, the date, and the note that the tiers, the verdict-pin, and never-downgrade come from the universal `model-effort-routing` rule — only the model ids are per-project. Index it in `MEMORY.md`.
+   Both standard profiles use the ladder `haiku < sonnet < opus < fable`.
+
+   Record the answers for the hook render below and write `$MEM/feedback/model-routing-profile.md` (standard feedback frontmatter, name `feedback-model-routing-profile`). It states the **ladder** first, then top / deep / balanced / light, the date, and the note that the tiers, the verdict-pin, and never-downgrade come from the universal `model-effort-routing` rule — only the ids and their order are per-project. Index it in `MEMORY.md`.
+
+   ```
+   LADDER   = haiku, sonnet, opus, fable    # cheapest first; ids AND order live only here
+   top      = opus
+   deep     = opus
+   balanced = sonnet
+   light    = haiku
+   ```
+
+   **Assert before going further** — every rung the profile names must be on the ladder. A `TOP_MODEL` that is not on the ladder used to break the verdict pin silently; a `DEEP_MODEL` that is not on it cannot floor anything:
+
+   ```bash
+   node -e '
+   const L=JSON.parse(process.argv[1]), P=process.argv.slice(2);
+   const bad=P.filter(m=>!L.includes(m));
+   if(bad.length){console.error(`taskloop init: ${bad.join(", ")} not on the ladder (${L.join(" < ")}). Fix the profile before arming the loop.`);process.exit(1)}
+   console.log("profile ok:", L.join(" < "));
+   ' '["haiku","sonnet","opus","fable"]' "$TOP_MODEL" "$DEEP_MODEL" "$BALANCED_MODEL"
+   ```
 5. **Loop strategy** — ask via `AskUserQuestion` ("How rigorous should the loop be by default?"), per `assets/feedback/loop-strategy-profiles.md`:
    - **auto (Recommended, default)** — each ticket gets the rung its complexity asks for (`fast` unless a money/auth/concurrency/cross-cutting signal fires). When QA hands back a defect that reveals a surface the classification missed, the ticket is re-classified — possibly straight to `heavy`. A defect *inside* the known complexity (a typo, a missing test) does not move the rung. Failures are never simply counted.
    - **balanced** — a constant risk-scaled gate on every ticket.
@@ -135,6 +171,18 @@ PLANE_REVIEW_STATUS="In Review"
 PLANE_BLOCKED_STATUS="Blocked"
 ```
 
+For GitHub Issues:
+
+```
+GITHUB_REPO=<org>/<repo>
+GITHUB_TOKEN=<PAT with `repo` scope>   # optional — omit to use the `gh auth` session
+READY_LABEL="ready"
+IN_PROGRESS_LABEL="in-progress"
+IN_REVIEW_LABEL="in-review"
+BLOCKED_LABEL="blocked"
+MERGED_LABEL="merged"
+```
+
 Provider-neutral vars, appended for every provider:
 
 ```
@@ -155,7 +203,9 @@ Render `assets/monitor-github-prs.sh.tmpl` substituting `{{REGISTRY_FILE}}` → 
 
 ### `hook-agent-routing.mjs` (mechanical model routing)
 
-Render `assets/hook-agent-routing.mjs.tmpl` from the routing profile chosen in Step 4: `{{TOP_MODEL}}` → the profile's top (`fable` for Mythos, `opus` for High), `{{DEEP_MODEL}}` → `opus` (both standard profiles; custom's answer otherwise), `{{BALANCED_MODEL}}` → `sonnet` (or custom's answer), `{{MEM}}` → the absolute memory-dir path. Write to `$MEM/hook-agent-routing.mjs`.
+Render `assets/hook-agent-routing.mjs.tmpl` from the routing profile chosen in Step 4: `{{LADDER_JSON}}` → the profile's ladder as a JSON array, cheapest first (`["haiku","sonnet","opus","fable"]` for both standard profiles), `{{TOP_MODEL}}` → the profile's top (`fable` for Mythos, `opus` for High), `{{DEEP_MODEL}}` → `opus` (both standard profiles; custom's answer otherwise), `{{BALANCED_MODEL}}` → `sonnet` (or custom's answer), `{{MEM}}` → the absolute memory-dir path. Write to `$MEM/hook-agent-routing.mjs`.
+
+The hook derives its rank ordering from `{{LADDER_JSON}}` — nothing about model order is hardcoded in the script. A harness that adds a rung is a one-line profile edit, not a code change.
 
 Besides routing, this hook writes the **append-only spawn ledger** to `$MEM/telemetry/spawns-YYYY-MM.jsonl` — one line per `[LOOP-AGENT]` spawn. Telemetry writes are best-effort and wrapped in `try/catch`: a failing ledger must never block a spawn.
 
@@ -201,7 +251,21 @@ echo '{"agent_id":"a1","tool_input":{"command":"pnpm test","run_in_background":t
 echo '{"agent_id":"a1","tool_input":{"command":"pnpm test"}}' | node "$MEM/hook-loop-guards.mjs"
 ```
 
-(`<MEM>` expanded to the absolute memory-dir path.) Pipe-test before moving on: `echo '{"tool_input":{"prompt":"[LOOP-AGENT issue:X tier:light verdict:yes] t","model":"haiku"}}' | node $MEM/hook-agent-routing.mjs` must emit an `updatedInput` with the profile's TOP model (the verdict pin — holds in every profile); and `echo '{"tool_input":{"prompt":"[LOOP-AGENT issue:X tier:deep verdict:no] t","model":"sonnet"}}' | node $MEM/hook-agent-routing.mjs` must emit the deep-floor model (silent pass-through is also correct when the profile's deep floor IS sonnet). This is the mechanical half of the `model-effort-routing` rule — the marker contract is enforced even when prose is forgotten.
+(`<MEM>` expanded to the absolute memory-dir path.) Pipe-test all four before moving on — this is the mechanical half of the `model-effort-routing` rule, and a hook that is installed but silently wrong is worse than none:
+
+```bash
+H="node $MEM/hook-agent-routing.mjs"
+# 1. verdict pin: must emit updatedInput with the profile's TOP model, in EVERY profile
+echo '{"tool_input":{"prompt":"[LOOP-AGENT issue:X tier:light verdict:yes] t","model":"haiku"}}' | $H
+# 2. verdict pin holds even against the ladder's highest rung, when that is not the profile's top
+echo '{"tool_input":{"prompt":"[LOOP-AGENT issue:X tier:light verdict:yes] t","model":"fable"}}' | $H
+# 3. deep floor: must emit the deep-floor model (silent pass-through is correct iff that floor IS sonnet)
+echo '{"tool_input":{"prompt":"[LOOP-AGENT issue:X tier:deep verdict:no] t","model":"sonnet"}}' | $H
+# 4. off-ladder model: must WARN and leave the model untouched — never silently re-point it
+echo '{"tool_input":{"prompt":"[LOOP-AGENT issue:X tier:deep verdict:no] t","model":"not-a-model"}}' | $H
+```
+
+Test 2 is the one that matters most and is easiest to get wrong: the pin is an **identity** check (`model !== TOP_MODEL`), not a rank comparison. A rank comparison passes `fable` through untouched whenever the profile's top is not itself the ladder's highest rung — and the verdict then runs on a model the owner never chose.
 
 ### `targeted-regate.mjs` (the fix-round re-gate)
 
@@ -209,7 +273,15 @@ Render `assets/targeted-regate.mjs.tmpl` substituting `{{TOP_MODEL}}` and `{{BAL
 
 ### `agent-brief.md` (what spawned agents read at startup)
 
-Render `assets/agent-brief.md.tmpl`, substituting `{{PROVIDER}}`, `{{PROJECT_NAME}}`, `{{REPO}}`, `{{ISSUE_PREFIX}}` (the tracker's issue key prefix), `{{BRANCH_PREFIX}}` (the loop's branch namespace), `{{READY_STATUS}}` / `{{REVIEW_STATUS}}` / `{{BLOCKED_STATUS}}`, and `{{TEST_CMD}}` (the project's per-project test command). Write to `$MEM/agent-brief.md`.
+Render `assets/agent-brief.md.tmpl`, substituting `{{PROVIDER}}`, `{{PROJECT_NAME}}`, `{{REPO}}`, `{{BRANCH_PREFIX}}` (the loop's branch namespace), `{{READY_STATUS}}` / `{{REVIEW_STATUS}}` / `{{BLOCKED_STATUS}}`, `{{TEST_CMD}}` (the project's per-project test command), and the three issue-reference placeholders below. Write to `$MEM/agent-brief.md`.
+
+The branch prefix and the way an issue is *named* are separate, because on GitHub they differ:
+
+| Placeholder | Linear / Jira / Plane | GitHub Issues |
+|---|---|---|
+| `{{ISSUE_PREFIX}}` — branch shape `<branch-prefix>/<issue-prefix>-<N>-<slug>` | the tracker key, e.g. `ABC` | the literal `issue` |
+| `{{ISSUE_REF}}` — commit subject, registry entry, status line | `ABC-<N>` | `#<N>` |
+| `{{ISSUE_LINK_KEYWORD}}` — how the PR body references the issue | `Refs` (any word; the tracker links by key) | **`Refs`, never `Closes`/`Fixes`/`Resolves`** — a closing keyword makes GitHub close the issue on merge, which is the owner's decision, not the loop's |
 
 Every spawned implementation agent reads THIS instead of `MEMORY.md` + `autonomous-loop.md` + the feedback files. Its bytes must stay stable across spawns or the prompt cache misses on every agent — see `feedback/efficiency-levers.md`.
 
@@ -223,9 +295,13 @@ The hook records what each agent *was*; this records what it *cost*, by summing 
 
 Render `assets/model-usage-log.md.tmpl` with `{{PROJECT_NAME}}`. Write to `$MEM/model-usage-log.md`. It holds the routing policy and the human-recorded gate-cost measurements; the per-task ledger lives in `telemetry/`, written mechanically.
 
-### `reconcile-merged.sh` (Plane only, level-triggered repair)
+### `reconcile-merged.sh` (level-triggered repair — Plane and GitHub)
 
-For the Plane path, render `assets/reconcile-merged-plane.sh.tmpl` substituting `{{ENV_FILE}}` → `$MEM/.env`, `{{REPOS}}`, `{{GH_AUTHOR}}`, `{{ISSUE_PREFIX}}`. Write to `$MEM/reconcile-merged.sh`, `chmod +x`. Smoke-test it once with `ONCE=1 $MEM/reconcile-merged.sh` — it prints nothing when the board is already in sync.
+For **Plane**, render `assets/reconcile-merged-plane.sh.tmpl` substituting `{{ENV_FILE}}` → `$MEM/.env`, `{{REPOS}}`, `{{GH_AUTHOR}}`, `{{ISSUE_PREFIX}}`.
+
+For **GitHub Issues**, render `assets/reconcile-merged-github.sh.tmpl` substituting `{{ENV_FILE}}` and `{{GH_AUTHOR}}`. It labels merged issues `merged` and **never closes them**; an issue already labelled, or already closed by the owner, is skipped.
+
+Either way: write to `$MEM/reconcile-merged.sh`, `chmod +x`, and smoke-test once with `ONCE=1 $MEM/reconcile-merged.sh` — it prints nothing when the board is already in sync.
 
 For Linear and Jira there is no script yet; the `reconcile-tracker-vs-github` rule still applies and the loop runs the reconcile inline each sweep via the provider's transition recipe.
 

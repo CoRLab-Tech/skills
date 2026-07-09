@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Level-triggered reconciler (GitHub Issues): every merged loop PR -> its issue labelled `merged`.
+#
+# The PR watcher is edge-triggered and only bookkeeps merges it witnesses; this pass compares ACTUAL
+# state and repairs whatever it missed. See feedback/reconcile-tracker-vs-github.md.
+#
+# It NEVER closes an issue: closing is the owner's completion decision (references/providers/github.md).
+# Idempotent — an issue already carrying MERGED_LABEL is skipped. Silent when everything is in sync,
+# so it can run under the harness's Monitor as a self-triggering background reconciler.
+#
+# Placeholders substituted at init time:
+#   {{ENV_FILE}}  -> $MEM/.env   (GITHUB_REPO, MERGED_LABEL, IN_REVIEW_LABEL)
+#   {{GH_AUTHOR}} -> the GitHub login the loop commits as
+#
+# Cadence:  INTERVAL=120 ./reconcile-merged.sh     (default 120s)
+# Once:     ONCE=1 ./reconcile-merged.sh
+
+set -uo pipefail
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+ENV_FILE="{{ENV_FILE}}"
+AUTHOR="{{GH_AUTHOR}}"
+INTERVAL="${INTERVAL:-120}"
+
+# shellcheck disable=SC1090
+set -a; . "$ENV_FILE" 2>/dev/null; set +a
+: "${MERGED_LABEL:=merged}"
+: "${IN_REVIEW_LABEL:=in-review}"
+
+reconcile_once() {
+  [ -z "${GITHUB_REPO:-}" ] && { echo "[reconcile] ERROR: GITHUB_REPO missing from $ENV_FILE" >&2; return 1; }
+
+  local merged
+  if ! merged=$(gh pr list --repo "$GITHUB_REPO" --author "$AUTHOR" --state merged \
+                  --json headRefName --limit 120 2>/dev/null); then
+    echo "[reconcile] transient: gh pr list failed for $GITHUB_REPO" >&2
+    return 0
+  fi
+
+  # The branch convention pins the issue number: <prefix>/issue-<N>-<slug>. A bare leading number
+  # would match far too much, which is why the adapter refuses `gh issue develop`'s default shape.
+  local nums
+  nums=$(printf '%s' "$merged" | jq -r '.[].headRefName' | sed -nE 's/.*issue-([0-9]+).*/\1/p' | sort -un)
+  [ -z "$nums" ] && return 0
+
+  for N in $nums; do
+    local labels
+    labels=$(gh issue view "$N" --repo "$GITHUB_REPO" --json state,labels \
+               -q 'select(.state=="OPEN") | .labels[].name' 2>/dev/null) || continue
+    # Closed already (the owner accepted it), or we have been here before: nothing to do.
+    printf '%s\n' "$labels" | grep -qx "$MERGED_LABEL" && continue
+    [ -z "$labels" ] && continue   # `select` filtered it out => the issue is CLOSED
+
+    gh issue edit "$N" --repo "$GITHUB_REPO" \
+      --add-label "$MERGED_LABEL" --remove-label "$IN_REVIEW_LABEL" >/dev/null 2>&1 \
+      || gh issue edit "$N" --repo "$GITHUB_REPO" --add-label "$MERGED_LABEL" >/dev/null 2>&1 \
+      || { echo "[reconcile] could not label #$N" >&2; continue; }
+
+    echo "[reconcile] #$N: PR merged on GitHub -> labelled '$MERGED_LABEL' (left open for the owner to close)"
+    sleep 0.3   # be kind to the API under a merge wave
+  done
+}
+
+if [ "${ONCE:-0}" = "1" ]; then reconcile_once; exit 0; fi
+while true; do reconcile_once; sleep "$INTERVAL"; done

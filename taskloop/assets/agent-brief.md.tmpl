@@ -17,7 +17,7 @@ metadata:
 4. Implement **only** this task — minimal diff, no scope creep, no public-contract moves unless asked. A new dependency is a vetted last resort.
 5. Ship tests WITH the change: a bugfix needs a fail→pass reproducing test; new behavior needs coverage.
 6. **Gates run FOREGROUND.** Never `run_in_background`, never arm a Monitor for tests. This also covers any container rebuild + live-stack verification: never background the build and end your turn — that is a dead run, the build will not wake you. Wait for it in the foreground: poll until healthy, then verify, all inline in one turn. Run `{{TEST_CMD}}` plus typecheck, lint, and build **for the affected project only** — the whole-monorepo run is `main`'s post-merge job, not yours.
-7. Scan the staged diff for secrets. Commit as `{{ISSUE_PREFIX}}-<N>: <human summary>` with **NO AI attribution** — no `Co-Authored-By`, no "Generated with Claude". Push, then `gh pr create --draft`, link the issue, and state "no UI surface" for backend work. For UI: commit before/after screenshots and verify in an **isolated** headless browser, never a shared one.
+7. Scan the staged diff for secrets. Commit as `{{ISSUE_REF}}: <human summary>` with **NO AI attribution** — no `Co-Authored-By`, no "Generated with Claude". Push, then `gh pr create --draft`, reference the issue in the body as `{{ISSUE_LINK_KEYWORD}} {{ISSUE_REF}}`, and state "no UI surface" for backend work. For UI: commit before/after screenshots and verify in an **isolated** headless browser, never a shared one.
 
 ## Gate sizing — pick by PR risk
 
@@ -39,9 +39,9 @@ A gate produces review and verdict WRITEUPS. Those are INTERMEDIATE artifacts, n
 (b) Transition the issue → {{REVIEW_STATUS}}.
 (c) Post a comment on the issue: the PR link plus a one-paragraph QA verdict.
 (d) Notify the owner with the ticket and PR links.
-(e) Append `{repo:"{{REPO}}",number:<N>,issue:"{{ISSUE_PREFIX}}-<N>"}` to `.pr-feedback-state`. The orchestrator rebuilds this registry authoritatively, so your append is a convenience, not the source of truth ([[feedback-pr-registry-race]]).
+(e) Append `{repo:"{{REPO}}",number:<N>,issue:"{{ISSUE_REF}}"}` to `.pr-feedback-state`. The orchestrator rebuilds this registry authoritatively, so your append is a convenience, not the source of truth ([[feedback-pr-registry-race]]).
 
-Return exactly: `{{ISSUE_PREFIX}}-<N>: <IN_REVIEW url | BLOCKED reason>` plus the PR number.
+Return exactly: `{{ISSUE_REF}}: <IN_REVIEW url | BLOCKED reason>` plus the PR number.
 
 ## Timebox and blockers
 
