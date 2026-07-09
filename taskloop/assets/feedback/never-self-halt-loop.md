@@ -31,4 +31,10 @@ metadata:
 - First action of any loop turn = fresh `gh pr list` + tracker fetch. Reconcile any newly-merged PR before saying anything ([[feedback-reconcile-tracker-vs-github]]).
 - If the owner nudges the loop and nothing changed, that is fine — verify, report the *verified* state tersely, keep the heartbeat, do not shut down.
 - Nothing actionable is not silence: every ticket the loop is not taking gets a reason ([[feedback-block-stuck-tickets-visibly]]).
-- Stopping is owner-only. See [[feedback-loop-autonomy-pr-plane-only]] — the loop self-detects merges and comments; the owner communicates via PR, tracker, and an explicit start/stop.
+- Stopping is owner-only.
+
+**The loop is an independent instrument.** It must NEVER depend on the owner announcing anything in chat — "merged", "commented", "CI is red". Two persistent monitors are its senses: the tracker's ready-queue poller (`monitor.sh`) and the PR watcher (`monitor-prs.sh`, polling every registered PR for state, comment, review and CI deltas). This rule exists because it happened: the owner had to say "merged" twice before the loop reacted.
+
+- On a **MERGED** event: move the issue to the Merged state ([[feedback-ticket-done-on-merge]]), drop the PR from the registry, verify the head branch was auto-deleted, then IMMEDIATELY pull the next ready task — no pause, no ping.
+- On a **comment / review / CI** event: service it before new work ([[feedback-watch-pr-comments]], [[feedback-regression-is-blocker]]).
+- All status the owner needs goes INTO the PR (body, comments, evidence) and the tracker issue (comments, state transitions). Chat is not a channel the loop relies on — only `start` and `stop` arrive that way.

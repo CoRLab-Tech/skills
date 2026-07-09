@@ -11,6 +11,6 @@ The Playwright MCP / Chrome MCP browser is **one shared instance with global sta
 
 **How to apply:**
 - Implementation agents running **in parallel** ([[feedback-parallel-disjoint-tasks]]) capture browser evidence with an ISOLATED browser only: headless Chrome CLI (`chrome --headless --screenshot=<path> --window-size=<w,h> <url>`) or a small scratchpad Node/CDP driver on a dedicated debugging port per agent. Unique dev-server ports per agent stay mandatory either way.
-- The shared Playwright/Chrome MCP browser is reserved for the **main loop's own single-threaded verification** ([[feedback-playwright-testing]]) — when exactly one actor is browsing, MCP is the right tool.
+- The shared Playwright/Chrome MCP browser is reserved for the **main loop's own single-threaded verification** ([[feedback-ui-verification-and-evidence]]) — when exactly one actor is browsing, MCP is the right tool.
 - The isolation requirement goes INTO each parallel agent's prompt, next to the unique-port assignment — an agent cannot be expected to discover the browser is shared.
-- Evidence standards are unchanged: same golden-path + edge-case coverage, same screenshots committed in-branch ([[feedback-pr-visual-evidence]]) — only the instrument differs.
+- Evidence standards are unchanged: same golden-path + edge-case coverage, same screenshots committed in-branch ([[feedback-ui-verification-and-evidence]]) — only the instrument differs.

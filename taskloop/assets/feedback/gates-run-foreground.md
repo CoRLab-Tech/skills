@@ -5,6 +5,9 @@ metadata:
   type: feedback
 ---
 
+**This rule is now enforced mechanically.** `hook-loop-guards.mjs`, a `PreToolUse` hook on `Bash`, DENIES a gate command that is backgrounded inside a subagent (`agent_id` in the hook payload is what identifies a subagent). The model receives the denial reason and retries in the foreground. The prose below explains *why*; the hook is what makes it true.
+
+
 Every long-running check inside a spawned agent — test suite, lint, typecheck, build, browser verification — runs as a **sequential foreground command**: the agent waits for each to finish and reads its output before moving on. A subagent must never launch a gate with `run_in_background`, a monitor, or a detached shell and then end its turn "until it reports green".
 
 **Why:** learned from a 13-agent parallel wave — several agents backgrounded their suites ("I'll commit when it's green") and then STOPPED. A subagent's background children do not reliably survive the end of its turn or re-wake it; the runs died silently, no branch was pushed, and the orchestrator had to resurrect each one by hand. Slow-but-finished beats fast-but-dead every time.

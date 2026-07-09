@@ -14,4 +14,4 @@ Before implementing, check which skills are available (the session's available-s
 - Invoke matched skills via the Skill tool at the right stage — while designing/implementing, not retroactively.
 - Repo-scoped skills (from the target repo's `.claude/skills/`) take precedence over generic ones when both match.
 - If nothing matches, proceed normally — this rule adds gates only where tooling already exists.
-- The PR-time counterpart is [[feedback-rigorous-pr-critique]]: `rigorous` in review mode on every PR when available.
+- The PR-time counterpart is [[feedback-pr-gate-passes]]: `rigorous` in review mode on every PR when available.

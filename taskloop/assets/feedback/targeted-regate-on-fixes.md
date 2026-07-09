@@ -10,7 +10,7 @@ A PR's **first** gate run is always the full suite of mandated gates — full lo
 **How a fix round re-gates:**
 - **Full test suite: always.** Compute is not the expensive part — a fix that breaks a distant test must be caught here ([[feedback-run-full-test-suite]]).
 - **Review-type gates: only the ones that blocked.** Re-run just the gate(s)/dimension(s) whose findings caused the fix, and scope their re-read to the fix delta (the changed hunks + immediate context), not the full diff again.
-- **QA + security verdicts: always, on the FULL current diff, on the profile's top model** ([[feedback-qa-agent-review]], [[feedback-security-review-gate]], [[feedback-model-effort-routing]]). This is the non-negotiable safety net for cross-cutting regressions in the dimensions the targeted re-review skipped — the cheap part is the re-reading, never the judging.
+- **QA + security verdicts: always, on the FULL current diff, on the profile's top model** ([[feedback-pr-gate-passes]], [[feedback-model-effort-routing]]). This is the non-negotiable safety net for cross-cutting regressions in the dimensions the targeted re-review skipped — the cheap part is the re-reading, never the judging.
 - **Escalation guard:** before going targeted, compare the fix delta against the blocking findings' files. If the fix touches files OUTSIDE that footprint (beyond trivial lockfile/snapshot churn), the "fix stayed inside the findings" premise is false — run the full gate suite instead.
 - A fix round that itself produces new blocking findings restarts this cycle; repeated non-convergence exits via [[feedback-fail-gracefully-timebox]], never via thinner gates.
 

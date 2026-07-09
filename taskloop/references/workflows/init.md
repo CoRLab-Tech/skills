@@ -159,7 +159,17 @@ Render `assets/hook-agent-routing.mjs.tmpl` from the routing profile chosen in S
 
 Besides routing, this hook writes the **append-only spawn ledger** to `$MEM/telemetry/spawns-YYYY-MM.jsonl` — one line per `[LOOP-AGENT]` spawn. Telemetry writes are best-effort and wrapped in `try/catch`: a failing ledger must never block a spawn.
 
-Then install the PreToolUse hook in the **project's** `.claude/settings.local.json` (create the file if missing, MERGE if it exists — never clobber; ensure it is gitignored):
+### `hook-loop-guards.mjs` (the rules that refuse to be ignored)
+
+Render `assets/hook-loop-guards.mjs.tmpl` substituting `{{MEM}}`. Write to `$MEM/hook-loop-guards.mjs`.
+
+It denies exactly two things, both of which agents demonstrably did anyway when they were only prose: **backgrounding a gate command inside a subagent** (the background child dies with the subagent's turn — a silent dead run), and **committing a message that carries AI attribution**. Denials feed `permissionDecisionReason` back to the model, which reads it and retries, and are appended to `telemetry/guards-*.jsonl`.
+
+Known blind spot, worth stating: the commit guard reads the shell command, so it catches `-m "…"` and heredoc-fed messages, but **not** `git commit -F <file>` where the trailer lives in a file the hook never sees. Projects that care can add a repo-side `commit-msg` hook for that path.
+
+### Install both hooks
+
+In the **project's** `.claude/settings.local.json` (create if missing, MERGE if it exists — never clobber; ensure it is gitignored). Matchers are regex over the tool name; every matching hook runs, and the most restrictive decision wins, so the two never conflict:
 
 ```json
 {
@@ -170,10 +180,25 @@ Then install the PreToolUse hook in the **project's** `.claude/settings.local.js
         "hooks": [
           { "type": "command", "command": "node <MEM>/hook-agent-routing.mjs" }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "node <MEM>/hook-loop-guards.mjs" }
+        ]
       }
     ]
   }
 }
+```
+
+Pipe-test the guard before moving on — a hook that is installed but never denies is worse than none, because it reads as protection:
+
+```bash
+# must DENY (a subagent backgrounding a gate): agent_id is what marks a subagent
+echo '{"agent_id":"a1","tool_input":{"command":"pnpm test","run_in_background":true}}' | node "$MEM/hook-loop-guards.mjs"
+# must ALLOW (the same command in the foreground)
+echo '{"agent_id":"a1","tool_input":{"command":"pnpm test"}}' | node "$MEM/hook-loop-guards.mjs"
 ```
 
 (`<MEM>` expanded to the absolute memory-dir path.) Pipe-test before moving on: `echo '{"tool_input":{"prompt":"[LOOP-AGENT issue:X tier:light verdict:yes] t","model":"haiku"}}' | node $MEM/hook-agent-routing.mjs` must emit an `updatedInput` with the profile's TOP model (the verdict pin — holds in every profile); and `echo '{"tool_input":{"prompt":"[LOOP-AGENT issue:X tier:deep verdict:no] t","model":"sonnet"}}' | node $MEM/hook-agent-routing.mjs` must emit the deep-floor model (silent pass-through is also correct when the profile's deep floor IS sonnet). This is the mechanical half of the `model-effort-routing` rule — the marker contract is enforced even when prose is forgotten.
@@ -263,9 +288,9 @@ Print a summary:
    Strategy: <fast|balanced|heavy>
    Memory:   ~/.claude/projects/<slug>/memory/
    Files:    .env (chmod 600), monitor.sh, monitor-prs.sh, hook-agent-routing.mjs,
-             usage-rollup.mjs, targeted-regate.mjs, MEMORY.md, agent-brief.md,
+             hook-loop-guards.mjs, usage-rollup.mjs, targeted-regate.mjs, MEMORY.md, agent-brief.md,
              autonomous-loop.md, restart-instructions.md, model-usage-log.md,
-             telemetry/ (append-only spend record), feedback/ (47 files)
+             telemetry/ (append-only spend record), feedback/ (38 files)
    Next:     run `/taskloop start` to arm the Monitor + ScheduleWakeup,
              or just type "start" in this directory in any future session.
 ```

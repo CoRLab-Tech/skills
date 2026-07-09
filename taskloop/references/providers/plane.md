@@ -161,7 +161,7 @@ Used by the `todo-opens-backlog-task` rule. New Plane work items land in the **p
 
 The PR doesn't exist yet at creation time — after `gh pr create`, post the PR URL onto this issue via the post-comment recipe above.
 
-The response carries `id` (UUID) and `sequence_id` — the human key to write back into the code comment is `<PLANE_PROJECT_IDENTIFIER>-<sequence_id>` (e.g. `TODO(MCP-7): ...`). Never pass the ready-state UUID here — backlog only, per [[feedback-only-ready-not-backlog]].
+The response carries `id` (UUID) and `sequence_id` — the human key to write back into the code comment is `<PLANE_PROJECT_IDENTIFIER>-<sequence_id>` (e.g. `TODO(MCP-7): ...`). Never pass the ready-state UUID here — backlog only, per [[feedback-queue-triage-plan]].
 
 ## Project + identifier + review-state resolution (init only)
 
@@ -188,6 +188,6 @@ Match on `name`, then store `PLANE_PROJECT_ID` (the `id`) and `PLANE_PROJECT_IDE
 - **`/api/v1/` prefix**, header **`X-Api-Key`** — the single most common self-host mistake is hitting `/api/` (session-authed) and getting a misleading 401.
 - New work items default to **Backlog**, not Todo — the ready queue stays clean without extra config.
 - Cursor pagination: iterate `next_cursor` only if the ready queue can exceed `per_page=100`; the loop takes one issue at a time so page one ordered by `-updated_at` is enough for the sweep.
-- PQL filters on state **UUID** / **group**, not state name — always resolve the name via `list_states` first. Group `unstarted` includes only `Todo` by default here, but a project can add more unstarted states, so filter by the specific `Todo` UUID, not the group. See [[feedback-only-ready-not-backlog]].
+- PQL filters on state **UUID** / **group**, not state name — always resolve the name via `list_states` first. Group `unstarted` includes only `Todo` by default here, but a project can add more unstarted states, so filter by the specific `Todo` UUID, not the group. See [[feedback-queue-triage-plan]].
 - Comments and descriptions are HTML, not markdown — do not post raw markdown.
 - MCP tools take `project_id` + `work_item_id` (UUIDs); the slug/token/base come from the MCP server's own env. curl calls pass everything explicitly from `$MEM/.env`.

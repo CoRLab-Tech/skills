@@ -5,6 +5,9 @@ metadata:
   type: feedback
 ---
 
+**This rule is now enforced mechanically.** `hook-loop-guards.mjs`, a `PreToolUse` hook on `Bash`, DENIES any `git commit` whose message carries a `Co-Authored-By: Claude` trailer or a "Generated with Claude" line — inline or heredoc-fed. Blind spot: `git commit -F <file>` hides the message from the hook; a repo-side `commit-msg` hook covers that path.
+
+
 NEVER add `Co-Authored-By: Claude`, "Generated with Claude Code", "🤖 Generated with Claude Code", or any AI/assistant attribution in commit messages, PR titles, PR descriptions, PR bodies, or anywhere else the loop writes.
 
 **Why:** Commits and PRs must look like they were authored by the human user, with no trace of AI tooling. Surfacing AI attribution invites premature dismissal of the work and clutters the project's git history with noise. Per the user's explicit standing instruction, attribution lines are scrubbed everywhere.

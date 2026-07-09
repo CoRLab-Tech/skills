@@ -1,0 +1,97 @@
+#!/usr/bin/env node
+// taskloop loop guards — PreToolUse hook on `Bash`.
+//
+// Two rules that agents have empirically ignored as prose now refuse to be ignored. Each rule below
+// exists because it was broken in a real run, not because it sounded prudent:
+//
+//   1. gates-run-foreground — subagents backgrounded their test suites and ended their turn. A
+//      background child does not survive a finished subagent, so the run died silently with nothing
+//      pushed. DENY a backgrounded gate command inside a subagent.
+//   2. no-ai-attribution — a commit trailer naming Claude slips in whenever a model writes the
+//      message from habit. DENY the commit, anywhere, main session included.
+//
+// Denial feeds `permissionDecisionReason` back to the model, which reads it and retries. This is why
+// the reasons below are written as instructions, not scoldings.
+//
+// Placeholders substituted at init time:
+//   {{MEM}} -> the project's memory dir (absolute), for the guard ledger
+//
+// Install as a SECOND PreToolUse matcher, alongside the routing hook:
+//   { "matcher": "Bash", "hooks": [{ "type": "command", "command": "node <MEM>/hook-loop-guards.mjs" }] }
+// Matchers are regex over the tool name; multiple matcher groups all run, and the most restrictive
+// decision wins — so this hook and hook-agent-routing.mjs never conflict.
+
+import fs from 'node:fs';
+
+const MEM = '{{MEM}}';
+
+// A "gate" is the thing whose result the turn depends on. Backgrounding one is what kills a run.
+const GATE = /\b(npm|pnpm|yarn|npx|nx|jest|vitest|pytest|go test|cargo test|mvn|gradle)\b.*\b(test|build|lint|typecheck|tsc)\b|\btsc\b|\beslint\b|\bdocker\s+compose\s+up\b/i;
+// Backgrounding expressed in the command itself, which is visible regardless of the tool schema.
+const BACKGROUNDED_IN_CMD = /(^|\s)nohup\s|&\s*$|&\s*(#.*)?$|\bdisown\b|\bsetsid\b/;
+const ATTRIBUTION = /Co-Authored-By:\s*Claude|Generated with \[?Claude|🤖 Generated with|Co-authored-by:\s*Claude/i;
+
+let raw = '';
+process.stdin.on('data', (c) => (raw += c));
+process.stdin.on('end', () => {
+  let p;
+  try { p = JSON.parse(raw); } catch { process.exit(0); }
+
+  const ti = p.tool_input || {};
+  const cmd = String(ti.command || '');
+  if (!cmd) process.exit(0);
+
+  // `agent_id` is present ONLY inside a subagent. That is exactly the scope of the foreground rule.
+  const inSubagent = Boolean(p.agent_id);
+  // The Bash tool accepts run_in_background, but its presence in the PreToolUse payload is not
+  // guaranteed by the docs. Treat it as a bonus signal: when absent, the command-level check still
+  // catches `&`/nohup. An absent field must never cause a false DENY.
+  const bgFlag = ti.run_in_background === true;
+  const backgrounded = bgFlag || BACKGROUNDED_IN_CMD.test(cmd);
+
+  const deny = (reason) => {
+    try {
+      fs.mkdirSync(`${MEM}/telemetry`, { recursive: true });
+      fs.appendFileSync(`${MEM}/telemetry/guards-${new Date().toISOString().slice(0, 7)}.jsonl`,
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          agent_id: p.agent_id ?? null,
+          tool_use_id: p.tool_use_id ?? null,
+          rule: reason.rule,
+          command: cmd.slice(0, 400),
+          bg_field_present: Object.prototype.hasOwnProperty.call(ti, 'run_in_background'),
+        }) + '\n');
+    } catch { /* the ledger is best-effort; the DENY is not */ }
+
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: reason.text,
+      },
+    }));
+    process.exit(0);
+  };
+
+  if (inSubagent && backgrounded && GATE.test(cmd)) {
+    deny({
+      rule: 'gates-run-foreground',
+      text: 'Blocked: this is a gate command and you backgrounded it inside a subagent. A background '
+        + 'child does not survive your turn ending, so the run would die silently and nothing would be '
+        + 'pushed. Re-run it in the FOREGROUND and wait for it to finish before you end your turn. If it '
+        + 'is a long container build, poll it inline in a loop until healthy — do not arm a Monitor and '
+        + 'do not return "suite still running".',
+    });
+  }
+
+  if (/\bgit\s+commit\b/.test(cmd) && ATTRIBUTION.test(cmd)) {
+    deny({
+      rule: 'no-ai-attribution',
+      text: 'Blocked: this commit message carries AI attribution (a Co-Authored-By: Claude trailer or a '
+        + '"Generated with Claude" line). This project ships no AI attribution in commits or PRs. Rewrite '
+        + 'the message without it and commit again.',
+    });
+  }
+
+  process.exit(0); // silent allow
+});

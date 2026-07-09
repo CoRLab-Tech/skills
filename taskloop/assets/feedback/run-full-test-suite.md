@@ -16,4 +16,4 @@ Before pushing and opening a PR, run the **entire test suite** of the affected s
 4. The test step comes **after** `tsc --noEmit` and `eslint` in the verification ritual, before commit + push.
 5. If any test fails — related to your change or not — fix it before the PR. If the failure is genuinely pre-existing and unrelated, surface it explicitly in the PR body rather than silently ignoring. Never push and rely on CI to catch it.
 6. The "can't run the full suite" exception is bounded, not self-declared: it applies ONLY when the suite needs credentials/infra this machine lacks, or when a **measured** run exceeds ~30 minutes wall-clock (attempt it before claiming). The PR body must then name the exact command attempted, the concrete blocker or measured runtime, and precisely which subset WAS run.
-7. Linked to [[feedback-new-code-needs-tests]] (tests ship WITH the change) and [[feedback-playwright-testing]] (the UI gate).
+7. Linked to [[feedback-new-code-needs-tests]] (tests ship WITH the change) and [[feedback-ui-verification-and-evidence]] (the UI gate).
