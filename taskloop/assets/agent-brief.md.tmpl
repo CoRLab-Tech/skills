@@ -27,7 +27,7 @@ metadata:
 
 Implementation effort: balanced-model `medium` by default; `high` only on a money or security surface, or after a failed attempt.
 
-**Your ticket's rung may already be escalated.** Read the `strategy:` field on the ticket's `LOOP-PLAN` marker before you pick a gate. Under `LOOP_STRATEGY=auto` the rung ratchets UP — never down — on every QA bounce, confirmed blocking finding, human change request, or failed attempt. If you are working a ticket that bounced, you owe it the stronger gate, not the one its risk class started at. When you trigger an escalation yourself (a failed attempt, a confirmed blocking finding), write the new rung back into the marker and say why. See [[feedback-loop-strategy-profiles]].
+**Read the `strategy:` field on the ticket's `LOOP-PLAN` marker before you pick a gate** — it may already be higher than the ticket's surface suggests. Under `LOOP_STRATEGY=auto` the rung tracks the ticket's assessed complexity, not its failure count. When a gate comes back red, ask whether the defect **revealed a surface you did not know about** (concurrency, auth, cross-tenant, money math, a footprint outside the plan): if so, re-classify and write the new rung into the marker with the reason. If the defect was a typo, a missing test, or a forgotten log line, the ticket is exactly what you thought it was — keep the rung and fix it. Never buy a stronger gate just because you failed once. See [[feedback-loop-strategy-profiles]].
 
 ## MANDATORY FINALIZE
 

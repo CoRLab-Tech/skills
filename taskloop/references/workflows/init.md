@@ -87,7 +87,7 @@ After the provider interview:
 
    Record the answers for the hook render below and write `$MEM/feedback/model-routing-profile.md` (standard feedback frontmatter, name `feedback-model-routing-profile`) stating: top / deep / balanced / light models, the date, and the note that the tiers, the verdict-pin, and never-downgrade come from the universal `model-effort-routing` rule — only the model ids are per-project. Index it in `MEMORY.md`.
 5. **Loop strategy** — ask via `AskUserQuestion` ("How rigorous should the loop be by default?"), per `assets/feedback/loop-strategy-profiles.md`:
-   - **auto (Recommended, default)** — each ticket starts at the cheapest rung that can honestly do it (`fast` unless a money/auth/concurrency/cross-cutting signal fires) and ratchets up one rung on every QA bounce, confirmed blocking finding, human change request, or failed attempt. Never ratchets down.
+   - **auto (Recommended, default)** — each ticket gets the rung its complexity asks for (`fast` unless a money/auth/concurrency/cross-cutting signal fires). When QA hands back a defect that reveals a surface the classification missed, the ticket is re-classified — possibly straight to `heavy`. A defect *inside* the known complexity (a typo, a missing test) does not move the rung. Failures are never simply counted.
    - **balanced** — a constant risk-scaled gate on every ticket.
    - **heavy** — every check on every PR; for money / auth / concurrency-heavy codebases.
    - **fast** — reduced gate everywhere with NO escalation, owner accepts the risk; for prototypes and spikes.
@@ -155,7 +155,9 @@ Render `assets/monitor-github-prs.sh.tmpl` substituting `{{REGISTRY_FILE}}` → 
 
 ### `hook-agent-routing.mjs` (mechanical model routing)
 
-Render `assets/hook-agent-routing.mjs.tmpl` from the routing profile chosen in Step 4: `{{TOP_MODEL}}` → the profile's top (`fable` for Mythos, `opus` for High), `{{DEEP_MODEL}}` → `opus` (both standard profiles; custom's answer otherwise), `{{BALANCED_MODEL}}` → `sonnet` (or custom's answer). Write to `$MEM/hook-agent-routing.mjs`.
+Render `assets/hook-agent-routing.mjs.tmpl` from the routing profile chosen in Step 4: `{{TOP_MODEL}}` → the profile's top (`fable` for Mythos, `opus` for High), `{{DEEP_MODEL}}` → `opus` (both standard profiles; custom's answer otherwise), `{{BALANCED_MODEL}}` → `sonnet` (or custom's answer), `{{MEM}}` → the absolute memory-dir path. Write to `$MEM/hook-agent-routing.mjs`.
+
+Besides routing, this hook writes the **append-only spawn ledger** to `$MEM/telemetry/spawns-YYYY-MM.jsonl` — one line per `[LOOP-AGENT]` spawn. Telemetry writes are best-effort and wrapped in `try/catch`: a failing ledger must never block a spawn.
 
 Then install the PreToolUse hook in the **project's** `.claude/settings.local.json` (create the file if missing, MERGE if it exists — never clobber; ensure it is gitignored):
 
@@ -186,9 +188,15 @@ Render `assets/agent-brief.md.tmpl`, substituting `{{PROVIDER}}`, `{{PROJECT_NAM
 
 Every spawned implementation agent reads THIS instead of `MEMORY.md` + `autonomous-loop.md` + the feedback files. Its bytes must stay stable across spawns or the prompt cache misses on every agent — see `feedback/efficiency-levers.md`.
 
+### `usage-rollup.mjs` + `telemetry/` (the append-only spend record)
+
+`mkdir -p "$MEM/telemetry"`. Render `assets/usage-rollup.mjs.tmpl` substituting `{{MEM}}` → the memory dir and `{{PROJECT_DIR}}` → `~/.claude/projects/<slug>` (the parent of the session dirs). Write to `$MEM/usage-rollup.mjs`.
+
+The hook records what each agent *was*; this records what it *cost*, by summing the `usage` blocks in each finished subagent transcript and joining on `tool_use_id`. Append-only, idempotent, and it skips any agent whose transcript is still being written. Smoke-test with `QUIESCE_SEC=0 node "$MEM/usage-rollup.mjs" --dry-run | head -3` — it prints candidate rows without writing.
+
 ### `model-usage-log.md`
 
-Render `assets/model-usage-log.md.tmpl` with `{{PROJECT_NAME}}`. Write to `$MEM/model-usage-log.md`. The loop appends one row per agent/gate spawn.
+Render `assets/model-usage-log.md.tmpl` with `{{PROJECT_NAME}}`. Write to `$MEM/model-usage-log.md`. It holds the routing policy and the human-recorded gate-cost measurements; the per-task ledger lives in `telemetry/`, written mechanically.
 
 ### `reconcile-merged.sh` (Plane only, level-triggered repair)
 
@@ -255,8 +263,9 @@ Print a summary:
    Strategy: <fast|balanced|heavy>
    Memory:   ~/.claude/projects/<slug>/memory/
    Files:    .env (chmod 600), monitor.sh, monitor-prs.sh, hook-agent-routing.mjs,
-             targeted-regate.mjs, MEMORY.md, agent-brief.md, autonomous-loop.md,
-             restart-instructions.md, model-usage-log.md, feedback/ (47 files)
+             usage-rollup.mjs, targeted-regate.mjs, MEMORY.md, agent-brief.md,
+             autonomous-loop.md, restart-instructions.md, model-usage-log.md,
+             telemetry/ (append-only spend record), feedback/ (47 files)
    Next:     run `/taskloop start` to arm the Monitor + ScheduleWakeup,
              or just type "start" in this directory in any future session.
 ```

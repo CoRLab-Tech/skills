@@ -16,8 +16,8 @@ A PR that has not passed the loop's gates must be a **draft**, not ready-for-rev
 **How to apply:**
 
 - Never `gh pr ready` before every gate is green. The review transition in the loop spec implies the `gh pr ready` that precedes it.
-- **What "green" means** is decided by [[feedback-trust-local-gates-not-remote-ci]]: where the project finalizes on the agent's local foreground gates, those gates green are the readiness condition and remote CI is not a precondition. Where the project does depend on remote CI, note that **CI runs on drafts** — a `on: pull_request` workflow with no draft guard runs the verify job on draft PRs, so waiting for it while the PR is still a draft is valid.
-- If a freshly-opened PR shows `no checks reported` and the project depends on remote CI, re-trigger it by pushing a **real-diff** commit (an EMPTY commit does not fire `synchronize`); if that still does not start CI, recreate the PR on a fresh branch (a fresh `opened` event reliably triggers it).
+- **"Green" means green CI**, which runs on drafts: a `on: pull_request` workflow with no draft guard runs the verify job on draft PRs, so waiting for it while the PR is still a draft is valid and required. The one exception is a check that never executed the code — see [[feedback-ci-failure-triage]], under which a green local gate plus an explicit "CI was red for billing/infra, I verified locally" PR comment is what unlocks `gh pr ready`.
+- If a freshly-opened PR shows `no checks reported`, re-trigger CI by pushing a **real-diff** commit (an EMPTY commit does not fire `synchronize`); if that still does not start CI, recreate the PR on a fresh branch (a fresh `opened` event reliably triggers it).
 - Do **not** use `gh pr close && gh pr reopen` to re-trigger: closing a PR detaches its CI triggers, so later pushes silently produce no run.
 - `ready_for_review` is NOT in the default `pull_request` event types, so `gh pr ready` alone does not start CI. Never mark ready on a PR whose verification — local or remote — never ran.
 - Drafts in the gates phase still count against the WIP cap — they are active work heading to review ([[feedback-wip-limit-open-prs]]).

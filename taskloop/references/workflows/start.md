@@ -20,6 +20,30 @@ rm -f "$MEM/.monitor-state" "$MEM/.pr-monitor-state"
 
 Removing the state file forces the first tick to re-emit the current actionable queue, so Claude sees what's pending immediately.
 
+## Step 1b — Arm the telemetry (append-only spend record)
+
+The loop must record what it spends **as it spends it**, not from memory afterwards. Arming it is two checks:
+
+```bash
+mkdir -p "$MEM/telemetry"
+# the routing hook writes the spawn ledger; prove it is installed AND that it appends
+echo '{"tool_use_id":"tu_smoke","tool_input":{"prompt":"[LOOP-AGENT issue:SMOKE tier:frontier verdict:yes] t","model":"haiku"}}' \
+  | node "$MEM/hook-agent-routing.mjs" >/dev/null
+tail -1 "$MEM/telemetry/spawns-$(date +%Y-%m).jsonl"   # must show issue:SMOKE, upgraded:true
+```
+
+If the hook is not wired into the project's `.claude/settings.local.json` as a `PreToolUse` matcher on `Task|Agent`, no spawn is ever recorded — re-install it per `init` Step 5 before continuing. A missing hook is silent: routing still happens by prose, and the ledger simply stays empty.
+
+The probe leaves one real row behind, with `issue: "SMOKE"`. The ledger is append-only, so it stays — filter it out when analysing (`jq 'select(.issue != "SMOKE")'`). That is the cost of proving the mechanism works rather than assuming it.
+
+Then roll up any agents that finished since the last session, and do this again at the **end of every tick**:
+
+```bash
+node "$MEM/usage-rollup.mjs"    # append-only, idempotent, skips still-running agents
+```
+
+The roll-up is cheap (hundreds of transcripts in about a second) and safe to run twice. It never rewrites a row, so a crash mid-run loses nothing.
+
 ## Step 2 — Verify the queue once
 
 Read the provider name from `$MEM/.env` (presence of `LINEAR_API_KEY` / `JIRA_API_TOKEN` / `PLANE_API_KEY` decides). Run the appropriate one-shot check from the provider doc:

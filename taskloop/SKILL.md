@@ -57,15 +57,20 @@ monitor.sh                      # rendered from provider template
 monitor-prs.sh                  # the loop's own eyes on its PRs (merge/comment/CI deltas)
 reconcile-merged.sh             # level-triggered repair of tickets the PR watcher's edge trigger missed (Plane)
 review-recall.sh                # cron: periodic ping listing review-ready PRs still unmerged
-hook-agent-routing.mjs          # PreToolUse gate: upgrades under-modeled [LOOP-AGENT] spawns (model-effort-routing rule)
+hook-agent-routing.mjs          # PreToolUse gate: upgrades under-modeled [LOOP-AGENT] spawns + writes the spawn ledger
+usage-rollup.mjs                # sums finished subagent transcripts into telemetry/usage-*.jsonl
 targeted-regate.mjs             # Workflow script for fix-round re-gates (targeted-regate-on-fixes rule)
+telemetry/spawns-YYYY-MM.jsonl  # append-only: issue, tier, strategy, requested → routed model, effort (hook-written)
+telemetry/usage-YYYY-MM.jsonl   # append-only: per-agent token totals joined to the spawn that caused them
 MEMORY.md                       # index — loaded into every conversation
 agent-brief.md                  # condensed startup brief spawned agents read INSTEAD of the full memory set
 autonomous-loop.md              # loop spec (provider-agnostic)
 restart-instructions.md         # "start" recipe
-model-usage-log.md              # per-task tier → model → effort ledger; measured gate costs
+model-usage-log.md              # routing policy + measured gate costs (the per-task ledger lives in telemetry/)
 feedback/<slug>.md              # universal + project-specific rules
 ```
+
+**Telemetry is written by mechanism, never by convention.** The hook cannot forget to record a spawn, and the roll-up cannot forget what an agent cost. Both files are append-only and idempotent. Nothing in the loop reads them back — `auto` decides a rung from the ticket's `LOOP-PLAN` marker alone, so a missing or rotated log can never change what the loop does. The telemetry is for the owner, after the fact.
 
 `MEMORY.md` is the only file guaranteed-loaded; everything else is linked from it and pulled in as needed.
 
@@ -121,11 +126,11 @@ The rules list (see `assets/feedback/`):
 | `queue-triage-plan.md` | On every queue change the loop autonomously marks each ready ticket with LOOP-PLAN (order / group / depends-on / tier); pull follows the plan |
 | `model-effort-routing.md` | Agents get model+effort by task tier (light/standard/deep/frontier); every go/no-go verdict runs on the profile's top model |
 | `telegram-notify-owner.md` | Telegram pings at attention-worthy moments — blocked, review-ready with PR links, or gone idle |
-| `loop-strategy-profiles.md` | `LOOP_STRATEGY` (auto/fast/balanced/heavy) in `.env` sets routing, gate rigor, re-gate depth, and WIP; `auto` starts each ticket at the cheapest honest rung and ratchets up on a QA bounce |
+| `loop-strategy-profiles.md` | `LOOP_STRATEGY` (auto/fast/balanced/heavy) in `.env` sets routing, gate rigor, re-gate depth, and WIP; `auto` gives each ticket the rung its complexity asks for, and re-classifies only when QA reveals a surface it missed |
 | `cost-conscious-gating.md` | Gate rigor and model scale to PR risk; top-model verdicts only, `xhigh` only on money/auth/concurrency |
 | `token-hygiene.md` | Model-match every task, keep a warm light-model ops-helper, hold the prompt cache stable; observe cheap, judge dear |
 | `efficiency-levers.md` | The remaining safe token/wall-clock levers — and the hard quality floor never to cut |
-| `trust-local-gates-not-remote-ci.md` | Finalize on local foreground gates, not the PR branch's remote CI; `main` post-merge stays the backstop |
+| `ci-failure-triage.md` | GitHub CI is the authority; triage a red check by cause — code-red blocks, billing/infra-red falls back to local gates and says so on the PR |
 | `draft-until-gated.md` | Every PR is born a draft; ready-for-review, the review transition, and the owner ping are one event |
 | `never-self-halt-loop.md` | Only the owner's `stop` halts the loop; never speak from a remembered queue; self-heal a monitor that proved a miss |
 | `continuous-flow-from-ready.md` | Continuous flow, not waves — a ticket blocked only on the loop's own open PR is doable now by stacking |

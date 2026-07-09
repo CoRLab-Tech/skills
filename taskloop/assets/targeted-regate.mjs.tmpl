@@ -29,8 +29,9 @@ const A = typeof args === 'string' ? JSON.parse(args) : (args || {})
 const { pr, issue, diffPath, hunkDir, repoDir, acceptance, dims, blockingBar, round } = A
 const verdictEffort = A.verdictEffort || 'high'
 
-const FINDINGS = { type: 'object', additionalProperties: false, properties: { findings: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { severity: { type: 'string', enum: ['blocking', 'major', 'minor', 'nit'] }, file: { type: 'string' }, line: { type: 'integer' }, summary: { type: 'string' }, rationale: { type: 'string' } }, required: ['severity', 'file', 'summary', 'rationale'] } } }, required: ['findings'] }
-const VERDICT = { type: 'object', additionalProperties: false, properties: { status: { type: 'string', enum: ['CONFIRMED', 'PLAUSIBLE', 'REFUTED'] }, blocking: { type: 'boolean' }, reason: { type: 'string' } }, required: ['status', 'blocking', 'reason'] }
+// `quote` is required: a finding that cannot quote the line it is about is refuted before it is judged.
+const FINDINGS = { type: 'object', additionalProperties: false, properties: { findings: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { severity: { type: 'string', enum: ['blocking', 'major', 'minor', 'nit'] }, file: { type: 'string' }, line: { type: 'integer' }, quote: { type: 'string' }, summary: { type: 'string' }, rationale: { type: 'string' } }, required: ['severity', 'file', 'quote', 'summary', 'rationale'] } } }, required: ['findings'] }
+const VERDICT = { type: 'object', additionalProperties: false, properties: { status: { type: 'string', enum: ['CONFIRMED', 'PLAUSIBLE', 'REFUTED'] }, blocking: { type: 'boolean' }, citation_ok: { type: 'boolean' }, reason: { type: 'string' } }, required: ['status', 'blocking', 'citation_ok', 'reason'] }
 const QA = { type: 'object', additionalProperties: false, properties: { verdict: { type: 'string', enum: ['pass', 'fail'] }, acceptance_met: { type: 'array', items: { type: 'string' } }, gaps: { type: 'array', items: { type: 'string' } }, summary: { type: 'string' } }, required: ['verdict', 'gaps', 'summary'] }
 
 const ctxFull = `PR #${pr} implements tracker issue ${issue}. This is a TARGETED RE-GATE (round ${round}) after a fix. Full diff at ${diffPath} — Read it. Repo at ${repoDir} for merged context.\nAcceptance and scope:\n${acceptance}`
@@ -40,7 +41,7 @@ phase('Review')
 // Re-review ONLY the dimensions whose findings were blocking last round (the fix touched these);
 // the full-diff verdicts below catch any cross-cutting regression in the untouched dimensions.
 const reviewed = await parallel(dims.map((d) => () =>
-  agent(`[LOOP-AGENT issue:${issue} tier:standard verdict:no]\nYou are a precise reviewer re-gating a fix. ${ctxFull}\n\nRe-review ONLY the ${d.key} dimension — the dimension a prior blocking finding was in. Focus: ${d.focus}\n\nThe fix claims to resolve the prior finding here. Hunt for: (a) the prior defect NOT actually resolved, (b) a NEW defect the fix introduced in this dimension, (c) an incomplete fix. Return up to 8 concrete findings, each with a real failure scenario in 'rationale'. Empty array if this dimension is now clean. ${blockingBar}`,
+  agent(`[LOOP-AGENT issue:${issue} tier:standard verdict:no]\nYou are a precise reviewer re-gating a fix. ${ctxFull}\n\nRe-review ONLY the ${d.key} dimension — the dimension a prior blocking finding was in. Focus: ${d.focus}\n\nThe fix claims to resolve the prior finding here. Hunt for: (a) the prior defect NOT actually resolved, (b) a NEW defect the fix introduced in this dimension, (c) an incomplete fix. Return up to 8 concrete findings, each with a real failure scenario in 'rationale' and, in 'quote', the VERBATIM source line you are describing (copied character for character from the file or diff, at the 'file'/'line' you name). A finding you cannot quote will be refuted unread — do not report it. Empty array if this dimension is now clean. ${blockingBar}`,
     { label: `review:${d.key}`, phase: 'Review', model: '{{BALANCED_MODEL}}', effort: 'high', schema: FINDINGS })))
 
 const all = reviewed
@@ -52,11 +53,14 @@ log(`Targeted review (${dims.map((d) => d.key).join(', ')}) surfaced ${all.lengt
 phase('Verify')
 // Hunk-scoped: each verifier Reads ONLY its finding's per-file hunk, not the full diff.
 const verified = all.length ? await parallel(all.map((f) => () =>
-  agent(`[LOOP-AGENT issue:${issue} tier:standard verdict:no]\nYou are an adversarial verifier of a single re-gate finding on ${issue}.\n\nCOST NOTE: Read ONLY the isolated per-file hunk for this finding at ${hunkPath(f.file)} (the diff for just ${f.file}). If you need surrounding context, Read that one file in ${repoDir} — but do NOT Read the full diff at ${diffPath}.\n\nReviewer (${f.dim}) claims:\nfile: ${f.file}${f.line ? ':' + f.line : ''} — ${f.summary}\nrationale: ${f.rationale}\n\nReturn CONFIRMED (name the trigger, quote the line), PLAUSIBLE, or REFUTED (quote the proof). ${blockingBar} Default REFUTED when uncertain.`,
+  agent(`[LOOP-AGENT issue:${issue} tier:standard verdict:no]\nYou are an adversarial verifier of a single re-gate finding on ${issue}.\n\nCOST NOTE: Read ONLY the isolated per-file hunk for this finding at ${hunkPath(f.file)} (the diff for just ${f.file}). If you need surrounding context, Read that one file in ${repoDir} — but do NOT Read the full diff at ${diffPath}.\n\nReviewer (${f.dim}) claims:\nfile: ${f.file}${f.line ? ':' + f.line : ''} — ${f.summary}\nquote: ${JSON.stringify(f.quote)}\nrationale: ${f.rationale}\n\nSTEP 1 — CHECK THE CITATION FIRST. Open ${f.file} at the named location and compare the reviewer's 'quote' against what is actually there. If that text is absent, or is present but does not say what the finding claims, return immediately: status REFUTED, citation_ok false, blocking false, reason "citation does not match source: <what is actually there>". Spend NO further reasoning — a finding about code that does not exist is refuted, however plausible it reads.\n\nSTEP 2 — only if the citation checks out (citation_ok true), judge the claim on its merits: CONFIRMED (name the trigger), PLAUSIBLE, or REFUTED (quote the proof). ${blockingBar} Default REFUTED when uncertain.`,
     { label: `verify:${f.dim}:${f.file}`, phase: 'Verify', model: '{{BALANCED_MODEL}}', effort: 'high', schema: VERDICT }).then((v) => ({ ...f, verdict: v })))) : []
 
 const confirmedBlocking = verified.filter((f) => f && f.verdict && f.verdict.status !== 'REFUTED' && f.verdict.blocking)
-log(`Verify: ${confirmedBlocking.length} confirmed BLOCKING`)
+// Findings killed by the citation check never cost a judgment pass. A high count here means the
+// review dimensions are hallucinating — worth a look before trusting the rest of the round.
+const citationFailures = verified.filter((f) => f && f.verdict && f.verdict.citation_ok === false).length
+log(`Verify: ${confirmedBlocking.length} confirmed BLOCKING, ${citationFailures} refuted on citation`)
 
 phase('Verdict')
 // Both verdicts ALWAYS read the FULL diff — the safety net for cross-cutting regressions in the
@@ -72,8 +76,9 @@ return {
   pr, issue, mode: 'targeted', round,
   dims: dims.map((d) => d.key),
   candidateCount: all.length,
+  citationFailures,
   confirmedBlocking,
-  allVerified: verified.map((f) => f && { dim: f.dim, file: f.file, severity: f.severity, summary: f.summary, status: f.verdict && f.verdict.status, blocking: f.verdict && f.verdict.blocking }),
+  allVerified: verified.map((f) => f && { dim: f.dim, file: f.file, severity: f.severity, summary: f.summary, status: f.verdict && f.verdict.status, blocking: f.verdict && f.verdict.blocking, citation_ok: f.verdict && f.verdict.citation_ok }),
   qa,
   security: sec,
   pass: confirmedBlocking.length === 0 && qa && qa.verdict === 'pass' && sec && sec.verdict === 'pass',
