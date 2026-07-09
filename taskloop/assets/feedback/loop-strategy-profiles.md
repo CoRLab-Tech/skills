@@ -7,7 +7,7 @@ metadata:
 
 The loop's rigor is a **switchable strategy**, so the owner can trade thoroughness for speed on demand. Named profiles, not a continuous knob — points an owner can reason about beat a slider nobody can calibrate mid-race.
 
-`auto` is the DEFAULT: it starts every ticket at the cheapest rigor that can honestly do the job and **ratchets up on evidence** (see below). The three fixed profiles it selects among are `fast` (ship quickly, rails only), `balanced` (risk-scaled rigor per [[feedback-cost-conscious-gating]]), and `heavy` (maximal rigor, every check on every PR). Pin one of the three when you want a constant regime rather than an adaptive one.
+`auto` is the DEFAULT: it gives every ticket **the rung its complexity asks for**, and revises that judgment only when QA reveals the ticket is not what it looked like (see below). The three fixed profiles it selects among are `fast` (ship quickly, rails only), `balanced` (risk-scaled rigor per [[feedback-cost-conscious-gating]]), and `heavy` (maximal rigor, every check on every PR). Pin one of the three when you want a constant regime rather than an adaptive one.
 
 ## The switch
 
@@ -15,11 +15,13 @@ The loop's rigor is a **switchable strategy**, so the owner can trade thoroughne
 - **The owner switches two ways:** edit `LOOP_STRATEGY` in `.env`, or just say "switch to auto/fast/balanced/heavy" — the loop updates the var AND, for agents already in flight, `SendMessage`s each one to apply the new profile to its REMAINING steps (the live-steer mechanic from [[feedback-cost-conscious-gating]]). A switch never rewrites work already gated.
 - **Per-ticket override:** a ticket's `LOOP-PLAN` marker ([[feedback-queue-triage-plan]]) may carry `strategy:<fast|balanced|heavy>` to override the global default for that one ticket — global `fast` but this one PR forced `heavy`. Absent → the global `LOOP_STRATEGY`. An explicit per-ticket override also **pins** that ticket: `auto` will still ratchet it upward on evidence, but never below the pinned rung.
 
-## `auto` — the minimum sufficient rigor, ratcheted by evidence
+## `auto` — the rung that the ticket's complexity asks for
 
-`auto` is not a fifth column in the matrix. It is a **policy for choosing** among `fast` / `balanced` / `heavy`, **per ticket**, and revising that choice as evidence arrives. The principle: *spend the least that can honestly do this task, and let being wrong be the thing that buys more spend.*
+`auto` is not a fifth column in the matrix. It is a **policy for choosing** among `fast` / `balanced` / `heavy`, **per ticket**, from the ticket's assessed complexity and risk. The principle: *spend what this task actually demands — no more, and no less.*
 
-**Step 1 — entry rung, decided once when the ticket is pulled.** The floor is `fast`; complexity and risk are what lift it. Classify from the ticket, its diff footprint in the plan, and the files it will touch:
+**`auto` does not count failures.** A bounce is not a coin dropped into a machine that buys one more rung. The rung is always a function of what the ticket **is**, never of how many times it has failed. A bounce matters only when it *teaches you something new about what the ticket is* — and then the rung moves to whatever that new understanding demands, which may be one step, two steps, or none at all.
+
+**Step 1 — classify when the ticket is pulled.** The floor is `fast`; complexity and risk are what lift it. Classify from the ticket, its diff footprint in the plan, and the files it will touch:
 
 | Signal | Entry rung |
 |---|---|
@@ -32,25 +34,33 @@ The loop's rigor is a **switchable strategy**, so the owner can trade thoroughne
 
 When two signals fire, take the higher rung. When genuinely ambiguous, route up — an unnecessary `balanced` gate is cheap next to a missed money bug.
 
-**Step 2 — the ratchet. Any of these escalates the ticket ONE rung, immediately and stickily:**
+**Step 2 — re-classify when QA hands back new information about the ticket.** A QA `fail`, a confirmed blocking finding, a human change request, a failed attempt, or a red `main` traced to this PR is a **prompt to re-run Step 1 with what you now know** — not an escalation in itself. Ask one question: *does this evidence change what the ticket is?*
 
-- The QA or security verdict returns `fail` — the ticket bounces from review back to In Progress.
-- A gate finding is CONFIRMED blocking.
-- A human review comment asks for a change ([[feedback-watch-pr-comments]]).
-- An honest implementation attempt fails and the agent retries.
-- `main` goes red post-merge and the bisect points at this PR ([[feedback-trust-local-gates-not-remote-ci]]).
+**It changes the classification when the defect reveals a surface or a structure the entry classification did not know about.** Then the rung jumps straight to whatever Step 1 assigns to that surface — `fast` → `heavy` in one move if that is what the table says:
 
-`fast → balanced → heavy`, and `heavy` is the ceiling. **The ratchet only ever turns up.** A ticket that reached `heavy` stays `heavy` for every remaining round, including its fix re-gates — the whole point is that a ticket which already fooled one gate has earned the stronger one. The rung resets only when the PR merges.
+| What QA revealed | New rung |
+|---|---|
+| The confirmed defect is a concurrency, idempotency, auth, cross-tenant, or money-math bug | whatever Step 1 gives that surface — usually `heavy` |
+| The fix must touch files outside the ticket's planned footprint | at least `balanced` — the ticket is cross-cutting after all |
+| The regression landed in a dimension the review did not cover | `balanced` |
+| The acceptance criterion was missed because the domain was misunderstood | `balanced` |
+| The ticket turns out to depend on a contract or schema it was not supposed to change | `balanced` |
 
-**Why a ratchet and not a re-classification.** A bounce is evidence the entry classification was wrong, and the cheapest correct response to "my risk model underestimated this ticket" is to stop trusting it for this ticket. De-escalating after a passing round would let a ticket oscillate: pass at `fast`, drop rigor, regress, bounce again. Monotonic escalation converges; a two-way knob does not.
+**It does NOT change the classification when the defect sits entirely inside the complexity you already understood.** A typo, a missing test, a forgotten log line, a naming nit, an off-by-one in code whose shape was never in doubt — these say the *implementation* was sloppy, not that the *ticket* is harder than you thought. The rung stays exactly where it was, and the fix re-gates at that rung. Buying a `heavy` gate because someone forgot a null check is how `auto` would quietly become `heavy` for everything.
 
-**Bookkeeping — the ratchet must be visible, or it silently resets.** On every escalation:
+**One safety valve, and it is not a counter either.** If a ticket fails **twice at the same rung** and neither failure reclassified it, that pattern is itself the new information: the rung is wrong, whatever the table said. Move it up one and record why. Two independent misses at a rigor level are evidence about the rigor level.
 
-1. Write the new rung into the ticket's `LOOP-PLAN` marker as `strategy:<rung>` so a later tick (or a fresh session, or a different agent) reads the escalated rung and not the entry one.
-2. Note the trigger in the ticket comment that already accompanies the bounce ([[feedback-status-mirrors-work]]): "QA verdict failed → escalated to `balanced`."
-3. Append a row to `model-usage-log.md` with the rung and its trigger — this is the telemetry that shows whether the entry classifier is calibrated. If most tickets ratchet on their first bounce, the entry table is too optimistic and belongs one rung higher.
+**The rung never drops while the ticket is open.** A re-classification that finds *less* complexity late in a ticket is almost always an artifact of the work already being done — the hard part is behind you, so the ticket looks easy. Lowering there would drop the gate exactly when the diff is largest. `heavy` is the ceiling; the rung resets only when the PR merges.
 
-**`auto` re-gates through [[feedback-targeted-regate-on-fixes]] like any other profile** — but at the escalated rung. A ticket that bounced into `heavy` gets `heavy`'s full re-gate, not the targeted one.
+**Bookkeeping — a rung change must be visible, or it silently resets.** Whenever Step 2 moves the rung:
+
+1. Write the new rung into the ticket's `LOOP-PLAN` marker as `strategy:<rung>` so a later tick — a fresh session, a different agent — reads the current rung and not the entry one.
+2. Record **what was reclassified**, not that something failed, in the ticket comment that already accompanies the bounce ([[feedback-status-mirrors-work]]): "QA found a cross-tenant read bypass — this is an auth surface, not a plain endpoint → `heavy`." A comment that says only "escalated after bounce" has recorded nothing.
+3. Append a row to `model-usage-log.md` with the rung and the reclassification reason. That is the telemetry that calibrates the entry table: if tickets keep getting reclassified into the same surface, that surface belongs in Step 1's table so the next ticket enters at the right rung instead of paying for the discovery.
+
+**A bounce that does NOT move the rung is also worth one line in the log** — it is the evidence that the entry classification was right and the implementation was merely wrong. Without it you cannot tell a well-calibrated `auto` from a lucky one.
+
+**`auto` re-gates through [[feedback-targeted-regate-on-fixes]] like any other profile**, at the ticket's current rung. A ticket reclassified into `heavy` gets `heavy`'s full re-gate; a ticket that stayed at `fast` because the defect was a typo gets `fast`'s cheap one.
 
 ## The matrix
 
@@ -66,18 +76,20 @@ Model names below are tiers, not ids: `top` / `deep` / `balanced` / `light` reso
 | Extra critique passes | none | `/review` + `rigorous` on every PR ([[feedback-run-code-review]], [[feedback-rigorous-pr-critique]]); QA agent and security gate by risk | ALL passes on EVERY PR: `/review` + `rigorous` + `security-review` + QA-agent global + design-vs-implementation |
 | WIP | refill aggressively, at or above the project's cap | the project's configured cap ([[feedback-wip-limit-open-prs]]) | roughly half the cap — depth over throughput, fewer concurrent agents to avoid session-limit thrash |
 | Best for | prototypes, spikes, internal tooling, mechanical PRs, non-critical services, racing a deadline with owner-accepted risk | mixed codebases where most PRs carry real risk | money movement, auth/security, concurrency cores, release-critical PRs, "must not be wrong" |
-| `auto` picks it when | no risk signal fires and the ticket has not bounced | a risk signal fires, or the ticket bounced once | a money/auth/concurrency core, or the ticket bounced twice |
+| `auto` picks it when | no risk signal fires | a risk signal fires, or QA reclassified the ticket as cross-cutting | the ticket is — or QA revealed it to be — a money/auth/concurrency surface |
 
 ## Rails that hold in EVERY profile — fast included, non-negotiable
 
 1. **Secret scan on every staged diff** ([[feedback-no-secrets-in-code]]) — never cut, cheap.
-2. **Green tests + typecheck + lint + build before finalize** ([[feedback-trust-local-gates-not-remote-ci]]) — never ship red, in any profile.
+2. **Green tests + typecheck + lint + build before finalize** ([[feedback-regression-is-blocker]], [[feedback-ci-failure-triage]]) — never ship red, in any profile.
 3. **No AI attribution; PR evidence for UI; PR link on the ticket; tracker state mirrors reality on merge** — process rails, profile-independent.
 
 **Pinned `fast` is PURE: no escalation of any kind.** When the owner sets `LOOP_STRATEGY=fast` explicitly, money-movement, auth, concurrency, and idempotency PRs run fast's reduced gate too — the owner owns that risk by choosing the profile. The only lift is a manual per-ticket `strategy:` override. Rails 1–3 still hold: "pure" drops the *gate rigor*, not those three.
 
-**This is exactly what `auto` changes.** `auto` also *starts* at `fast`, but it is not pure: it lifts the risky classes to `balanced` or `heavy` up front, and it ratchets on evidence. Choose pinned `fast` when you want speed and accept the risk; choose `auto` when you want speed *except* where the code says otherwise. `auto` is the default because on most codebases the risky classes are a small minority of tickets, so it buys `fast`'s wall-clock on the majority while never letting a money path through a light gate.
+**This is exactly what `auto` changes.** `auto` also lands most tickets on `fast`, but it is not pure: it lifts the risky classes to `balanced` or `heavy` up front, and it re-reads the classification when QA proves the ticket was misread. Choose pinned `fast` when you want speed and accept the risk; choose `auto` when you want speed *except* where the code says otherwise. `auto` is the default because on most codebases the risky classes are a small minority of tickets, so it buys `fast`'s wall-clock on the majority while never letting a money path through a light gate.
 
-**Why:** the all-checks regime (`heavy`) catches CI-invisible bugs but costs ~0.6–1.5M tokens per PR and hits session limits. `balanced` holds essentially that catch rate at a fraction of the cost by scaling rigor to risk. `fast` trades the adversarial safety net for wall-clock where a wrong PASS is cheap to reverse. `auto` makes that trade per ticket instead of per project, and treats a QA bounce as proof it traded wrong.
+**Why:** the all-checks regime (`heavy`) catches CI-invisible bugs but costs ~0.6–1.5M tokens per PR and hits session limits. `balanced` holds essentially that catch rate at a fraction of the cost by scaling rigor to risk. `fast` trades the adversarial safety net for wall-clock where a wrong PASS is cheap to reverse. `auto` makes that trade **per ticket** instead of per project.
 
-**How to apply:** read `LOOP_STRATEGY` at the top of every tick. Under `auto`, resolve each ticket's rung — entry classification, then any `strategy:` already ratcheted into its `LOOP-PLAN` marker, whichever is higher — before spawning, and pass that rung's model, effort, and gate shape into every `agent()` call for that ticket. When the owner switches mid-run, steer in-flight agents rather than waiting for the next spawn. See [[feedback-efficiency-levers]] for what is safe to trim beyond this and what is the hard floor.
+**Why complexity and not a failure counter.** A counter charges the ticket for the *implementation's* mistakes: forget a null check, buy a `heavy` gate. Do that a few times and `auto` degenerates into `heavy` for everything, which is the regime it exists to avoid. Worse, it prices rigor by how clumsy the agent was rather than by what the code can break — a sloppy typo on a doc PR would out-rank a clean first pass on a payments path. Rigor should track blast radius, and blast radius is a property of the ticket. QA's role is not to punish; it is to tell you the blast radius was bigger than you thought.
+
+**How to apply:** read `LOOP_STRATEGY` at the top of every tick. Under `auto`, resolve each ticket's rung — the Step 1 classification, or the `strategy:` already recorded in its `LOOP-PLAN` marker, whichever is higher — before spawning, and pass that rung's model, effort, and gate shape into every `agent()` call for that ticket. When a gate comes back red, run Step 2 before re-spawning: reclassify, do not increment. When the owner switches profile mid-run, steer in-flight agents rather than waiting for the next spawn. See [[feedback-efficiency-levers]] for what is safe to trim beyond this and what is the hard floor.

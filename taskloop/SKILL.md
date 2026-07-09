@@ -121,11 +121,11 @@ The rules list (see `assets/feedback/`):
 | `queue-triage-plan.md` | On every queue change the loop autonomously marks each ready ticket with LOOP-PLAN (order / group / depends-on / tier); pull follows the plan |
 | `model-effort-routing.md` | Agents get model+effort by task tier (light/standard/deep/frontier); every go/no-go verdict runs on the profile's top model |
 | `telegram-notify-owner.md` | Telegram pings at attention-worthy moments — blocked, review-ready with PR links, or gone idle |
-| `loop-strategy-profiles.md` | `LOOP_STRATEGY` (auto/fast/balanced/heavy) in `.env` sets routing, gate rigor, re-gate depth, and WIP; `auto` starts each ticket at the cheapest honest rung and ratchets up on a QA bounce |
+| `loop-strategy-profiles.md` | `LOOP_STRATEGY` (auto/fast/balanced/heavy) in `.env` sets routing, gate rigor, re-gate depth, and WIP; `auto` gives each ticket the rung its complexity asks for, and re-classifies only when QA reveals a surface it missed |
 | `cost-conscious-gating.md` | Gate rigor and model scale to PR risk; top-model verdicts only, `xhigh` only on money/auth/concurrency |
 | `token-hygiene.md` | Model-match every task, keep a warm light-model ops-helper, hold the prompt cache stable; observe cheap, judge dear |
 | `efficiency-levers.md` | The remaining safe token/wall-clock levers — and the hard quality floor never to cut |
-| `trust-local-gates-not-remote-ci.md` | Finalize on local foreground gates, not the PR branch's remote CI; `main` post-merge stays the backstop |
+| `ci-failure-triage.md` | GitHub CI is the authority; triage a red check by cause — code-red blocks, billing/infra-red falls back to local gates and says so on the PR |
 | `draft-until-gated.md` | Every PR is born a draft; ready-for-review, the review transition, and the owner ping are one event |
 | `never-self-halt-loop.md` | Only the owner's `stop` halts the loop; never speak from a remembered queue; self-heal a monitor that proved a miss |
 | `continuous-flow-from-ready.md` | Continuous flow, not waves — a ticket blocked only on the loop's own open PR is doable now by stacking |

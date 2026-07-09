@@ -87,7 +87,7 @@ After the provider interview:
 
    Record the answers for the hook render below and write `$MEM/feedback/model-routing-profile.md` (standard feedback frontmatter, name `feedback-model-routing-profile`) stating: top / deep / balanced / light models, the date, and the note that the tiers, the verdict-pin, and never-downgrade come from the universal `model-effort-routing` rule — only the model ids are per-project. Index it in `MEMORY.md`.
 5. **Loop strategy** — ask via `AskUserQuestion` ("How rigorous should the loop be by default?"), per `assets/feedback/loop-strategy-profiles.md`:
-   - **auto (Recommended, default)** — each ticket starts at the cheapest rung that can honestly do it (`fast` unless a money/auth/concurrency/cross-cutting signal fires) and ratchets up one rung on every QA bounce, confirmed blocking finding, human change request, or failed attempt. Never ratchets down.
+   - **auto (Recommended, default)** — each ticket gets the rung its complexity asks for (`fast` unless a money/auth/concurrency/cross-cutting signal fires). When QA hands back a defect that reveals a surface the classification missed, the ticket is re-classified — possibly straight to `heavy`. A defect *inside* the known complexity (a typo, a missing test) does not move the rung. Failures are never simply counted.
    - **balanced** — a constant risk-scaled gate on every ticket.
    - **heavy** — every check on every PR; for money / auth / concurrency-heavy codebases.
    - **fast** — reduced gate everywhere with NO escalation, owner accepts the risk; for prototypes and spikes.

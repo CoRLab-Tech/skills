@@ -40,11 +40,11 @@
 - [Queue triage plan](feedback/queue-triage-plan.md) — on every queue change the loop autonomously marks each ready ticket with LOOP-PLAN (order / group / depends-on / tier); pull follows the plan
 - [Model & effort routing](feedback/model-effort-routing.md) — agents routed by task tier; verdicts always on the most capable model at high effort
 - [Telegram pings to the owner](feedback/telegram-notify-owner.md) — blocked / review-ready (all PR links) / one idle ping, via ~/.claude/bin/tg-notify with Keychain creds
-- [Loop strategy profiles](feedback/loop-strategy-profiles.md) — `LOOP_STRATEGY` (auto/fast/balanced/heavy) in `.env`; `auto` starts each ticket at the cheapest honest rung and ratchets up on a QA bounce, never down
+- [Loop strategy profiles](feedback/loop-strategy-profiles.md) — `LOOP_STRATEGY` (auto/fast/balanced/heavy) in `.env`; `auto` picks the rung the ticket's complexity asks for, and re-classifies only when QA reveals a surface it missed — never counts failures
 - [Cost-conscious gating](feedback/cost-conscious-gating.md) — gate rigor and model scale to PR risk; top-model verdicts only, `xhigh` only on money/auth/concurrency
 - [Token hygiene](feedback/token-hygiene.md) — model-match every task, warm light-model ops-helper, byte-stable prompts; observe cheap, judge dear
 - [Efficiency levers](feedback/efficiency-levers.md) — the remaining safe token/wall-clock levers, and the hard quality floor never to cut
-- [Trust local gates, not remote CI](feedback/trust-local-gates-not-remote-ci.md) — finalize on local foreground gates for PR branches; `main` post-merge stays the backstop
+- [CI failure triage](feedback/ci-failure-triage.md) — GitHub CI is the authority; a code-red is a blocker, a billing/infra-red falls back to local gates plus an explicit "CI was red, I verified locally" PR comment
 - [Draft until gated](feedback/draft-until-gated.md) — every PR is born a draft; ready-for-review + review transition + owner ping are ONE event
 - [Never self-halt the loop](feedback/never-self-halt-loop.md) — only the owner's `stop` halts it; never speak from a remembered queue; self-heal a proved-dead monitor
 - [Continuous flow from ready](feedback/continuous-flow-from-ready.md) — no waves; a ticket blocked only on the loop's own open PR is doable now by stacking
