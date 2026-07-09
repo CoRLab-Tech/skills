@@ -1,15 +1,15 @@
 ---
 name: taskloop
-description: Autonomous task-execution loop that pulls actionable issues from a task tracker (Linear, Jira, or Plane), branches from main, implements, tests, opens a GitHub PR with no AI attribution, and self-paces the next iteration. Use when the user runs `/taskloop init` (one-time per-project setup that picks a provider and generates the loop's memory/config files), `/taskloop start` (re-arms the Monitor + ScheduleWakeup so the loop resumes for the current project), `/taskloop stop`, `/taskloop add-rule [slug]`, or `/taskloop status`. Also triggers when the user says "start" / "porneste" / "resume loop" in a working directory that already has a taskloop config under `~/.claude/projects/SLUG/memory/`.
+description: Autonomous task-execution loop that pulls actionable issues from a task tracker (Linear, Jira, Plane, or GitHub Issues), branches from main, implements, tests, opens a GitHub PR with no AI attribution, and self-paces the next iteration. Use when the user runs `/taskloop init` (one-time per-project setup that picks a provider and generates the loop's memory/config files), `/taskloop start` (re-arms the Monitor + ScheduleWakeup so the loop resumes for the current project), `/taskloop stop`, `/taskloop add-rule [slug]`, or `/taskloop status`. Also triggers when the user says "start" / "porneste" / "resume loop" in a working directory that already has a taskloop config under `~/.claude/projects/SLUG/memory/`.
 ---
 
 # Taskloop
 
 ## Overview
 
-Taskloop wires a task tracker (Linear, Jira, Plane) to a coding agent in a tight feedback loop. Each iteration pulls one "ready" issue, branches, implements the change with full test verification, opens a PR, and transitions the issue to review — fully autonomous, no AI attribution on commits/PRs. The loop self-paces via a `Monitor` background poll plus a `ScheduleWakeup` safety heartbeat.
+Taskloop wires a task tracker (Linear, Jira, Plane, GitHub Issues) to a coding agent in a tight feedback loop. Each iteration pulls one "ready" issue, branches, implements the change with full test verification, opens a PR, and transitions the issue to review — fully autonomous, no AI attribution on commits/PRs. The loop self-paces via a `Monitor` background poll plus a `ScheduleWakeup` safety heartbeat.
 
-Configuration is **per-project** (lives under `~/.claude/projects/<slug>/memory/`) so the same skill works for any repo. The provider (Linear / Jira / Plane) is chosen once at `init` time; the loop spec and feedback rules are provider-agnostic.
+Configuration is **per-project** (lives under `~/.claude/projects/<slug>/memory/`) so the same skill works for any repo. The provider (Linear / Jira / Plane / GitHub Issues) is chosen once at `init` time; the loop spec and feedback rules are provider-agnostic.
 
 ## Subcommand routing
 
@@ -34,7 +34,7 @@ If the args is empty, default to `init` only when the project's memory dir doesn
 
 ## Provider concept
 
-A provider (Linear, Jira, Plane) is a thin adapter that defines:
+A provider (Linear, Jira, Plane, GitHub Issues) is a thin adapter that defines:
 
 1. **Env vars** required (API key, host, project id, ...)
 2. **Monitor script** — a bash polling loop that emits one stdout line per change in the "ready" queue (so `Monitor` wakes Claude on every queue delta)
@@ -55,7 +55,7 @@ Per-project, under `~/.claude/projects/<slugified-cwd>/memory/`:
 .queue-plan                     # last LOOP-PLAN triage + queue signature (ids/titles/desc-hashes/human-comment counts — never the loop's own plan comments)
 monitor.sh                      # rendered from provider template
 monitor-prs.sh                  # the loop's own eyes on its PRs (merge/comment/CI deltas)
-reconcile-merged.sh             # level-triggered repair of tickets the PR watcher's edge trigger missed (Plane)
+reconcile-merged.sh             # level-triggered repair of tickets the PR watcher's edge trigger missed (Plane, GitHub)
 review-recall.sh                # cron: periodic ping listing review-ready PRs still unmerged
 hook-agent-routing.mjs          # PreToolUse gate on Task|Agent: upgrades under-modeled [LOOP-AGENT] spawns + writes the spawn ledger
 hook-loop-guards.mjs            # PreToolUse gate on Bash: denies a backgrounded gate inside a subagent, and a commit carrying AI attribution
@@ -115,7 +115,7 @@ The rules, by when they apply (see `assets/feedback/`):
 
 ## Adding a new provider
 
-To support a new tracker (GitHub Issues, Asana, ClickUp, …):
+To support a new tracker (Asana, ClickUp, Shortcut, …):
 
 1. Implement the 6-verb contract documented in `references/adding-a-provider.md`.
 2. Create `references/providers/<name>.md` with env, queries, and recipes.
@@ -144,4 +144,5 @@ Read these only when the workflow points to them:
 - `references/providers/linear.md` — Linear adapter (verified end-to-end)
 - `references/providers/jira.md` — Jira Cloud adapter (recipes documented, not live-tested)
 - `references/providers/plane.md` — Plane adapter, MCP-first with curl monitor/fallback (verified end-to-end)
+- `references/providers/github.md` — GitHub Issues adapter, states as labels via `gh` (recipes documented, not live-tested)
 - `references/adding-a-provider.md` — the 6-verb contract

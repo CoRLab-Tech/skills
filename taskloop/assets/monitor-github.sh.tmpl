@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# GitHub Issues ready-queue poller for taskloop. Emits one block per delta of the READY_LABEL queue,
+# so the harness's Monitor tool wakes Claude whenever the actionable queue changes.
+#
+# NOTE: this is NOT monitor-prs.sh. That one watches the loop's own PRs. This one is the provider
+# adapter: it supplies the ready queue the loop pulls work from.
+#
+# Placeholders substituted at init time:
+#   {{ENV_FILE}}   -> $MEM/.env   (GITHUB_REPO, READY_LABEL, optional GITHUB_TOKEN)
+#   {{STATE_FILE}} -> $MEM/.monitor-state
+#
+# Override polling cadence with: INTERVAL=30 ./monitor.sh
+
+set -o pipefail
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"   # gh lives here on macOS/homebrew
+
+ENV_FILE="{{ENV_FILE}}"
+STATE_FILE="{{STATE_FILE}}"
+INTERVAL="${INTERVAL:-60}"
+# The whole ready queue must be visible: queue-triage-plan computes order/group/depends-on across ALL
+# ready tickets, so a silent truncation would corrupt the plan. Warn loudly if we ever hit the cap.
+LIMIT="${LIMIT:-200}"
+
+[ -f "$ENV_FILE" ] || { echo "[monitor] error: env file not found at $ENV_FILE" >&2; exit 1; }
+command -v gh  >/dev/null 2>&1 || { echo "[monitor] error: gh CLI not found in PATH" >&2; exit 1; }
+command -v jq  >/dev/null 2>&1 || { echo "[monitor] error: jq not found in PATH" >&2; exit 1; }
+
+while true; do
+  # shellcheck disable=SC1090
+  set -a; . "$ENV_FILE"; set +a
+  : "${READY_LABEL:=ready}"
+
+  if [ -z "${GITHUB_REPO:-}" ]; then
+    echo "[monitor] error: GITHUB_REPO missing in $ENV_FILE"
+    sleep "$INTERVAL"; continue
+  fi
+
+  # An auth failure and an empty queue MUST NOT look the same. `gh` exits non-zero on a bad token or
+  # an unreachable repo, and prints `[]` with exit 0 on a genuinely empty queue. Conflating them lets
+  # a dead token masquerade as "no work to do" — forever, silently.
+  if ! RESPONSE=$(gh issue list --repo "$GITHUB_REPO" --label "$READY_LABEL" --state open \
+                    --json number,title,updatedAt --limit "$LIMIT" 2>"$STATE_FILE.err"); then
+    # Emit once per failure episode, not once per tick: this wakes Claude, and a spam loop is worse
+    # than the outage. The marker clears on the first success, re-arming the alarm.
+    if [ ! -f "$STATE_FILE.authfail" ]; then
+      echo "[monitor] error: gh issue list failed for $GITHUB_REPO — $(head -1 "$STATE_FILE.err" 2>/dev/null)"
+      echo "[monitor] the ready queue is UNKNOWN, not empty. Check GITHUB_TOKEN / repo access."
+      : > "$STATE_FILE.authfail"
+    fi
+    sleep "$INTERVAL"; continue
+  fi
+  rm -f "$STATE_FILE.authfail" "$STATE_FILE.err"
+
+  COUNT=$(printf '%s' "$RESPONSE" | jq 'length')
+  if [ "$COUNT" -ge "$LIMIT" ]; then
+    echo "[monitor] warning: ready queue hit the ${LIMIT}-issue cap — the triage plan may be incomplete. Raise LIMIT."
+  fi
+
+  SIG=$(printf '%s' "$RESPONSE" | jq -r '.[] | "\(.number)|ready|\(.updatedAt)|\(.title)"' | sort)
+
+  PREV=""
+  [ -f "$STATE_FILE" ] && PREV=$(cat "$STATE_FILE")
+
+  # `[ -n "$SIG$PREV" ]` keeps a first run against an empty queue silent — there is no delta to report.
+  if [ "$SIG" != "$PREV" ] && [ -n "$SIG$PREV" ]; then
+    echo "[monitor] queue changed: ${COUNT} actionable issue(s)"
+    printf '%s\n' "$SIG" | head -n 5 | while IFS='|' read -r ID ST UP TITLE; do
+      [ -z "$ID" ] && continue
+      printf '[monitor]  #%s\t%s\t%s\t%s\n' "$ID" "$ST" "$UP" "$TITLE"
+    done
+    printf '%s' "$SIG" > "$STATE_FILE"
+  fi
+
+  sleep "$INTERVAL"
+done

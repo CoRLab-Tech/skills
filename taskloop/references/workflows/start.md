@@ -46,10 +46,11 @@ The roll-up is cheap (hundreds of transcripts in about a second) and safe to run
 
 ## Step 2 — Verify the queue once
 
-Read the provider name from `$MEM/.env` (presence of `LINEAR_API_KEY` / `JIRA_API_TOKEN` / `PLANE_API_KEY` decides). Run the appropriate one-shot check from the provider doc:
+Read the provider name from `$MEM/.env` (presence of `LINEAR_API_KEY` / `JIRA_API_TOKEN` / `PLANE_API_KEY` / `GITHUB_REPO` decides). Run the appropriate one-shot check from the provider doc:
 
 - **Linear** — see "Verify Todo queue" in `references/providers/linear.md`
 - **Plane** — see "Verify ready queue" in `references/providers/plane.md`
+- **GitHub Issues** — see "Verify queue" in `references/providers/github.md`
 - **Jira** — see "Verify Ready queue" in `references/providers/jira.md`
 
 If the queue has items, **triage it first** — mark every ready ticket with the `LOOP-PLAN` vocabulary (order / group / depends-on / tier), autonomously, per the `queue-triage-plan` feedback rule — then **start processing per the plan immediately** following the spec in `$MEM/autonomous-loop.md`. If empty, just confirm "Monitor pornit, coadă goală" (or English equivalent) and continue to Step 3.

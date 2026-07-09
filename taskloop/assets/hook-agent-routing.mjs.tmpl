@@ -1,32 +1,49 @@
 #!/usr/bin/env node
 // taskloop agent-routing gate — PreToolUse hook on subagent spawns (Task/Agent).
 // Mechanically enforces the model-effort-routing rule with the project's
-// routing PROFILE (chosen at init) over a 4-rung ladder:
+// routing PROFILE (chosen at init) over the ladder declared in that profile:
 //   light → (no floor)   standard → BALANCED   deep → DEEP   frontier/verdict → TOP
-// Under-floor spawns are upgraded in place (updatedInput). It NEVER downgrades —
-// rank comparison means a spawn already above its floor passes untouched — and
-// it ignores spawns without the [LOOP-AGENT] marker, so non-taskloop usage is
-// unaffected.
 //
-// It ALSO writes the spawn ledger: one append-only JSONL line per loop spawn,
-// recording what was spawned, where, on which model, at which effort. This is a
-// MECHANISM, not a convention — the loop cannot forget to write it. Token counts
-// are not known at spawn time; `usage-rollup.mjs` joins them in afterwards by
-// tool_use_id. Telemetry never blocks a spawn: every write is best-effort.
+// TWO RULES, DELIBERATELY DIFFERENT:
+//
+//   * Verdicts and the frontier tier are pinned by IDENTITY, not by rank: the model must BE
+//     TOP_MODEL. Rank comparison used to be the test, and it silently failed whenever TOP_MODEL was
+//     not itself a rung in the hardcoded ladder — a verdict then ran on whatever the caller asked
+//     for. Identity is immune to unknown ids, which is exactly what a pin needs to be.
+//   * Deep and standard carry a FLOOR, compared by rank. An explicitly-requested model that is not
+//     on the ladder at all is left UNTOUCHED, with a visible warning: we cannot know whether an
+//     unknown id sits above or below the floor, and guessing "below" would silently DOWNGRADE a
+//     deliberately-chosen better model. Under-modelling is recoverable — the escalate-on-failure
+//     ladder re-runs a failed attempt one rung up. A silently downgraded frontier agent is not.
+//
+// It never downgrades a known model, never blocks a spawn, and ignores prompts without the
+// [LOOP-AGENT] marker, so non-taskloop usage is unaffected.
+//
+// It ALSO writes the spawn ledger: one append-only JSONL line per loop spawn, recording what was
+// spawned, where, on which model, at which effort. Token counts are joined in later by
+// usage-rollup.mjs via tool_use_id. Telemetry never blocks a spawn: every write is best-effort.
 //
 // Placeholders substituted at init time (from the routing-profile interview):
-//   {{TOP_MODEL}}      -> frontier tier + every verdict (fable | opus)
+//   {{LADDER_JSON}}    -> the profile's ordered ladder, cheapest first, e.g. ["haiku","sonnet","opus","fable"]
+//   {{TOP_MODEL}}      -> frontier tier + every verdict
 //   {{DEEP_MODEL}}     -> deep-tier floor (opus keeps its place under a fable top)
-//   {{BALANCED_MODEL}} -> standard-tier floor (e.g. sonnet)
+//   {{BALANCED_MODEL}} -> standard-tier floor
 //   {{MEM}}            -> the project's memory dir (absolute)
+//
+// The ladder lives in the profile, not here. Ids AND their order are one edit in one file
+// (feedback/model-routing-profile.md); a harness that adds a rung is a profile change, not a code
+// change. init asserts that TOP/DEEP/BALANCED are all on the ladder before the loop is ever armed.
 
 import fs from 'node:fs';
 
+const LADDER = {{LADDER_JSON}};
+const RANK = Object.fromEntries(LADDER.map((m, i) => [m, i]));
 const TOP_MODEL = '{{TOP_MODEL}}';
 const DEEP_MODEL = '{{DEEP_MODEL}}';
 const BALANCED_MODEL = '{{BALANCED_MODEL}}';
 const MEM = '{{MEM}}';
-const RANK = { haiku: 0, sonnet: 1, opus: 2, fable: 3 };
+
+const onLadder = (m) => Object.prototype.hasOwnProperty.call(RANK, m);
 
 let raw = '';
 process.stdin.on('data', (c) => (raw += c));
@@ -46,8 +63,8 @@ process.stdin.on('end', () => {
   const verdict = /verdict:yes/.test(attrs);
   const model = ti.model; // undefined = inherit session model
 
-  // Append-only spawn ledger. Never throws into the hook's decision path: a
-  // telemetry failure must not stop the loop from spawning an agent.
+  // Append-only spawn ledger. Never throws into the hook's decision path: a telemetry failure must
+  // not stop the loop from spawning an agent.
   const record = (finalModel, upgraded, why) => {
     try {
       const now = new Date();
@@ -58,6 +75,7 @@ process.stdin.on('end', () => {
           ts: now.toISOString(),
           session_id: payload.session_id ?? null,
           tool_use_id: payload.tool_use_id ?? null,
+          agent_id: payload.agent_id ?? null,
           issue,
           tier,
           strategy,
@@ -67,6 +85,7 @@ process.stdin.on('end', () => {
           effort: ti.effort ?? null,
           upgraded,
           why: why ?? null,
+          off_ladder: Boolean(model) && !onLadder(model),
           label: ti.description ?? null,
           agent_type: ti.subagent_type ?? null,
         }) + '\n');
@@ -86,25 +105,44 @@ process.stdin.on('end', () => {
     process.exit(0);
   };
 
+  // Allow, but make the anomaly visible to the human reading the transcript.
+  const warn = (why) => {
+    record(model ?? null, false, why);
+    process.stdout.write(JSON.stringify({
+      systemMessage: `taskloop routing gate: ${why}`,
+      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' },
+    }));
+    process.exit(0);
+  };
+
+  // ---- verdicts and frontier: pinned by identity -------------------------------------------------
+  // An unset model must be pinned too, so a mid-session /model downgrade cannot leak into a verdict.
   if (verdict || tier === 'frontier') {
-    // Pin explicitly — even "unset" — so a mid-session /model downgrade can't
-    // leak into a verdict. Already at/above the profile's top? Untouched.
-    if (!model || (RANK[model] ?? -1) < (RANK[TOP_MODEL] ?? 3)) {
+    if (model !== TOP_MODEL) {
       upgrade(TOP_MODEL, verdict ? 'verdict agents judge on the top model' : 'frontier tier is pinned to the top model');
     }
-  } else if (tier === 'deep') {
-    // Floor only — an unset model inherits the session (assumed ≥ deep floor);
-    // an explicit under-floor choice gets raised. Never lowered.
-    if (model && (RANK[model] ?? -1) < (RANK[DEEP_MODEL] ?? 2)) {
-      upgrade(DEEP_MODEL, 'deep tier has a floor');
+    record(model, false, null);
+    process.exit(0);
+  }
+
+  // ---- deep and standard: floored by rank --------------------------------------------------------
+  if (tier === 'deep' || tier === 'standard') {
+    const floor = tier === 'deep' ? DEEP_MODEL : BALANCED_MODEL;
+
+    if (model && !onLadder(model)) {
+      warn(`"${model}" is not on this project's ladder (${LADDER.join(' < ')}) — left untouched at tier ${tier}. `
+        + 'Add it to the ladder in feedback/model-routing-profile.md, or fix the spawn.');
     }
-  } else if (tier === 'standard') {
-    if (model && (RANK[model] ?? -1) < (RANK[BALANCED_MODEL] ?? 1)) {
-      upgrade(BALANCED_MODEL, 'standard tier must not run on the fastest model');
+    if (!onLadder(floor)) {
+      warn(`profile ${tier === 'deep' ? 'DEEP' : 'BALANCED'}_MODEL="${floor}" is not on the ladder `
+        + `(${LADDER.join(' < ')}) — cannot enforce the ${tier} floor. Fix feedback/model-routing-profile.md.`);
+    }
+    if (model && RANK[model] < RANK[floor]) {
+      upgrade(floor, tier === 'deep' ? 'deep tier has a floor' : 'standard tier must not run on the fastest model');
     }
   }
 
-  // Compliant spawn (light tier, or already at/above its floor): record and pass through.
+  // light tier, or a compliant spawn: record and pass through silently.
   record(model ?? null, false, null);
   process.exit(0);
 });
