@@ -129,8 +129,13 @@ After the provider interview:
    - **fast** — reduced gate everywhere with NO escalation, owner accepts the risk; for prototypes and spikes.
 
    Write the answer as `LOOP_STRATEGY` in `.env`. Tell the user they can switch later by editing that var or by saying "switch to auto/fast/balanced/heavy" mid-run, and that any single ticket can be pinned with a `strategy:` field in its `LOOP-PLAN` marker.
-6. **Review recall** — ask whether to install the `review-recall.sh` cron (a periodic Telegram ping listing review-ready PRs still unmerged). If yes, ask for the working-hours window (default 9–18). Default: yes.
-7. **Anything else worth saving as a project rule?** — open text. If non-empty, immediately call `add-rule` workflow to create `feedback/<slug>.md`.
+6. **Auto-merge** — ask via `AskUserQuestion` ("May the loop merge its own no-risk PRs without waiting for a human review?"), per `assets/feedback/automerge-risk-lanes.md`:
+   - **off (Recommended, default)** — every merge waits for a human approval (`merge-on-approval`). Today's behavior, unchanged.
+   - **on** — a ticket with no rung-lifting Step-1 risk signal (the table in `assets/feedback/loop-strategy-profiles.md`: money, auth/security incl. cross-tenant, concurrency, idempotency, a public contract change, a new service or external adapter, cross-cutting footprint) gets lane `merge: auto`: once every gate is green and NO human has touched the PR, the loop merges it itself. Risk-flagged tickets still wait for approval; the lane only ever ratchets `auto → review`.
+
+   Write the answer as `LOOP_AUTOMERGE` in `.env`. Tell the user they can switch later by editing the var or saying "automerge on/off" mid-run, and that any single ticket can be pinned to the review lane with `merge: review` in its `LOOP-PLAN` marker. If **on**: warn that branch protection requiring approving reviews blocks the auto lane on that repo — the loop surfaces the mismatch once and falls back to the review lane rather than bypass it.
+7. **Review recall** — ask whether to install the `review-recall.sh` cron (a periodic Telegram ping listing review-ready PRs still unmerged). If yes, ask for the working-hours window (default 9–18). Default: yes.
+8. **Anything else worth saving as a project rule?** — open text. If non-empty, immediately call `add-rule` workflow to create `feedback/<slug>.md`.
 
 ## Step 5 — Write files
 
@@ -187,6 +192,7 @@ Provider-neutral vars, appended for every provider:
 
 ```
 LOOP_STRATEGY=auto              # auto | fast | balanced | heavy — read at the top of every tick
+LOOP_AUTOMERGE=off              # on | off — the auto merge lane (automerge-risk-lanes); read at the top of every tick
 GH_AUTHOR=<the login the loop commits as>
 REPOS="<owner/repo> [<owner/repo> ...]"
 ```
@@ -325,7 +331,7 @@ For Linear and Jira there is no script yet; the `reconcile-tracker-vs-github` ru
 
 ### `review-recall.sh` (optional cron)
 
-If the user opted in at Step 4, render `assets/review-recall.sh.tmpl` substituting `{{REPOS}}`, `{{GH_AUTHOR}}`, `{{PROJECT_NAME}}`, `{{START_HOUR}}`, `{{END_HOUR}}`. Write to `$MEM/review-recall.sh`, `chmod +x`, verify with `$MEM/review-recall.sh --now`, then install the crontab line printed in the script's header. It pings only when at least one non-draft loop PR is open, so a quiet board stays quiet.
+If the user opted in at Step 4, render `assets/review-recall.sh.tmpl` substituting `{{REPOS}}`, `{{GH_AUTHOR}}`, `{{PROJECT_NAME}}`, `{{START_HOUR}}`, `{{END_HOUR}}`. Write to `$MEM/review-recall.sh`, `chmod +x`, verify with `$MEM/review-recall.sh --now`, then install the crontab line printed in the script's header. It pings only when at least one non-draft loop PR is open, so a quiet board stays quiet. (Under `LOOP_AUTOMERGE=on` the recall concerns review-lane PRs — lane-auto PRs self-merge on the loop's next sweep and only linger if the sweep is stalled.)
 
 ### Repo setting — auto-delete merged branches
 
@@ -378,20 +384,23 @@ Print a summary:
 
 ```
 ✅ taskloop initialized for <project name>
-   Provider: <Linear|Jira|Plane>
-   Strategy: <fast|balanced|heavy>
-   Memory:   ~/.claude/projects/<slug>/memory/
-   Files:    .env (chmod 600), monitor.sh, monitor-prs.sh, hook-agent-routing.mjs,
-             hook-loop-guards.mjs, usage-rollup.mjs, targeted-regate.mjs, MEMORY.md, agent-brief.md,
-             autonomous-loop.md, restart-instructions.md, model-usage-log.md,
-             telemetry/ (append-only spend record), feedback/ (38 files)
-   Next:     run `/taskloop start` to arm the Monitor + ScheduleWakeup,
-             or just type "start" in this directory in any future session.
+   Provider:  <Linear|Jira|Plane>
+   Strategy:  <auto|fast|balanced|heavy>
+   Automerge: <on|off>
+   Memory:    ~/.claude/projects/<slug>/memory/
+   Files:     .env (chmod 600), monitor.sh, monitor-prs.sh, hook-agent-routing.mjs,
+              hook-loop-guards.mjs, usage-rollup.mjs, targeted-regate.mjs, MEMORY.md, agent-brief.md,
+              autonomous-loop.md, restart-instructions.md, model-usage-log.md,
+              telemetry/ (append-only spend record), feedback/ (39 files)
+   Next:      run `/taskloop start` to arm the Monitor + ScheduleWakeup,
+              or just type "start" in this directory in any future session.
 ```
 
 ## Idempotency notes
 
 - **Projects initialized before the routing feature** keep working exactly as before — their memory dir has no routing rule, marker contract, hook, or profile, so behavior is byte-for-byte pre-change. To adopt routing, re-run `init` (overwrite the feedback files AND render the hook + profile together). Never hand-copy the new `feedback/*.md` into an old memory dir without the hook and profile — the routing rule references both.
+
+- **Projects initialized before the automerge feature** behave as `LOOP_AUTOMERGE=off` — the var is absent and no lane rule exists; that is safe and needs no action. To adopt, re-run `init` and overwrite the coupled set together: the feedback files (`automerge-risk-lanes`, `watch-pr-comments`, `merge-on-approval`, `queue-triage-plan`, `pr-registry-race`, `telegram-notify-owner`, `never-self-halt-loop`, `wip-limit-open-prs`, `ticket-done-on-merge`, `draft-until-gated`, `model-effort-routing`, `loop-strategy-profiles`) AND the rendered `agent-brief.md` / `autonomous-loop.md` / `restart-instructions.md` / `monitor-prs.sh` / `review-recall.sh`. Never hand-set `LOOP_AUTOMERGE=on` in an old memory dir — its sweep, registry schema, and LOOP-PLAN vocabulary predate the lane, so the switch would sit on top of rules that cannot honor it (every PR would silently default to the review lane).
 
 - `init` re-run on an already-configured project: ask per-file whether to overwrite. Default no.
 - API key already in `.env`: reuse, don't re-prompt.

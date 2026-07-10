@@ -7,6 +7,8 @@ metadata:
 
 An approved PR the loop opened is the loop's to merge. During the per-tick PR sweep ([[feedback-watch-pr-comments]]), any loop-owned PR with an **APPROVED** review, **green CI**, and **no unresolved changes-requested / open threads** gets merged autonomously.
 
+**This rule is the REVIEW lane.** With `LOOP_AUTOMERGE=on`, a ticket that carries no risk signal may merge through the auto lane instead — without waiting for an approval — per [[feedback-automerge-risk-lanes]]. A PR any human has touched (a review, a comment, anything) always belongs to THIS rule, whatever its lane said: once a human engages, only their approval merges it.
+
 **Why:** The human already said yes — that's the approval. Making them come back later to click "merge" adds latency for zero safety: CI is green and the review is done. The loop closing its own delivery cycle is the whole point of the autonomy.
 
 **How to apply:**

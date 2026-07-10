@@ -1,6 +1,6 @@
 ---
 name: feedback-telegram-notify-owner
-description: Ping the owner on Telegram (~/.claude/bin/tg-notify, creds in the macOS Keychain) at attention-worthy moments — blocked, review-ready with all PR links, or gone idle
+description: Ping the owner on Telegram (~/.claude/bin/tg-notify, creds in the macOS Keychain) at attention-worthy moments — blocked, review-ready with all PR links, auto-merged, or gone idle
 metadata:
   type: feedback
 ---
@@ -15,8 +15,15 @@ one-glance short: **project · what happened · link(s)**.
    decision, an inaccessible resource): what is blocked + what he must do.
 2. **Review-ready** — an issue moves to the review state: **ONE MESSAGE PER TASK** (never bundle
    several tasks into one message), each with the task key + every PR link tied to THAT task. A PR
-   with no tracker issue → just the PR link. Finished work with no PR → say what finished.
-3. **Idle** — queue empty or WIP-capped with nothing actionable: ONE ping when entering idle, not
+   with no tracker issue → just the PR link. Finished work with no PR → say what finished. For a
+   lane-auto PR under `LOOP_AUTOMERGE=on` ([[feedback-automerge-risk-lanes]]) the message says the
+   loop will self-merge on a coming sweep unless the owner comments — never imply a review is
+   being waited on.
+3. **Auto-merged** (`LOOP_AUTOMERGE=on` only) — a PR merged through the auto lane
+   ([[feedback-automerge-risk-lanes]]): task key + PR link + the word **auto-merged**, never a bare
+   "merged". This is the owner's signal that unreviewed code landed on main; it is part of the
+   mandatory audit trail, not routine progress.
+4. **Idle** — queue empty or WIP-capped with nothing actionable: ONE ping when entering idle, not
    one per tick; ping again only when leaving and re-entering idle.
 
 **Never ping** routine progress, commits, or every loop tick — protect the channel's signal. The ping is **best-effort, never a gate**: if `tg-notify` is missing (non-mac machine, fresh box), the

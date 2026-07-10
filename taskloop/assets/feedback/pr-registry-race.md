@@ -17,9 +17,10 @@ When many worktree agents finish near-simultaneously and each appends its PR to 
   gh pr list --author <me> --state open --json number,headRefName,isDraft --limit 100
   ```
 
-  Extract the issue key from the **branch name** (the loop's branch convention embeds it), not the PR title — titles routinely omit the key. Write `{"prs":[{repo,number,issue,branch,blocked},...]}`. In a monorepo, run the listing once per target repo and concatenate.
+  Extract the issue key from the **branch name** (the loop's branch convention embeds it), not the PR title — titles routinely omit the key. Write `{"prs":[{repo,number,issue,branch,blocked,lane,gatedHead,ownActivity},...]}`. In a monorepo, run the listing once per target repo and concatenate.
 - Agent-side appends may stay — they are harmless once the orchestrator overwrites — but never DEPEND on them for correctness.
-- Preserve the `blocked` flag across a rebuild: it lives only in the registry ([[feedback-fail-gracefully-timebox]] parks are excluded from the WIP cap), so carry it forward from the previous registry by PR number rather than dropping it.
+- Preserve the `blocked` flag across a rebuild: it lives only in the registry ([[feedback-fail-gracefully-timebox]] parks are excluded from the WIP cap), so carry it forward from the previous registry by repo+number rather than dropping it.
+- **Preserve `lane`, `gatedHead`, and `ownActivity` across a rebuild the same way** — carried forward by repo+number, never regenerated: `gh pr list` cannot yield them, and re-deriving the lane from the LOOP-PLAN marker at rebuild time could resurrect an auto lane that a human touch permanently revoked ([[feedback-automerge-risk-lanes]]). An entry whose carried-forward `lane` is absent defaults to `review`.
 - The PR watcher (`monitor-prs.sh`) tolerates a corrupt registry by unwrapping the known bad shape and de-duplicating entries, and emits a `registry corrupt` line so the loop rebuilds. Treat that line as a rebuild trigger, not a warning to ignore.
 - Shell gotchas when scripting the rebuild: `cmd | python3 - arg <<'PY'` makes the heredoc win stdin over the pipe — write the `gh` output to a temp file and pass its path as argv instead of piping. And do not put backslash-escaped quotes inside a Python f-string (`f"{o[\"k\"]}"` is a SyntaxError).
 
