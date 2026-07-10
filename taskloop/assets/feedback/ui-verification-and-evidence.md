@@ -31,11 +31,11 @@ A UI-affecting change is verified in a **real browser** before the PR opens, and
 
 `raw.githubusercontent.com` URLs require auth and render as **broken images** on private repos. Commit the captures into the PR branch instead — the GitHub web UI then renders them through the reviewer's own session.
 
-- Commit under `docs/pr-evidence/<issue-key>/` (or `.pr-screenshots/<issue-key>/`).
+- Commit under the project's evidence directory: `<evidence-dir>/<issue-key>/` (set at init, default `docs/evidence` — the exact path the pr-visual-evidence guard in `hook-loop-guards.mjs` expects; a different directory fails the mechanical check).
 - Reference each with **image syntax — the `!` is mandatory.** A plain `[label](url)` renders as a text link, not an image:
 
   ```markdown
-  ![short alt text](https://github.com/<owner>/<repo>/raw/<branch>/docs/pr-evidence/<issue-key>/<file>.png)
+  ![short alt text](https://github.com/<owner>/<repo>/raw/<branch>/<evidence-dir>/<issue-key>/<file>.png)
   ```
 
   The `/raw/<branch>/` form (equivalently `/blob/<branch>/<file>.png?raw=true`) redirects through the reviewer's session. Both work; pick one and stay consistent.

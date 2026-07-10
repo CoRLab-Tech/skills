@@ -69,7 +69,7 @@ If the tracker requires multiple calls, document the sequence.
 
 ## `transition_state(id, target)` recipe
 
-`target` is one of three logical values; the adapter maps each to a tracker-specific status name (or ID):
+`target` is one of four logical values; the adapter maps each to a tracker-specific status name (or ID):
 
 | `target` | Meaning | Typical mapping |
 |---|---|---|
@@ -96,7 +96,7 @@ Create a new issue in the tracker's **backlog** state (or the workflow's initial
 
 Requirements:
 
-- The created issue must land in the **backlog / triage** state — never the ready status the loop consumes, or the loop would feed itself work (see the `only-ready-not-backlog` rule).
+- The created issue must land in the **backlog / triage** state — never the ready status the loop consumes, or the loop would feed itself work (see the `queue-triage-plan` rule).
 - Return (or document how to read from the response) the human issue key and URL, so the loop can reference them in the code comment and the PR.
 - Document which state the tracker assigns by default and, if that default is the ready status, how to pass the backlog state explicitly.
 

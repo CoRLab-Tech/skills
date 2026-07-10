@@ -12,7 +12,9 @@
 #   {{GH_AUTHOR}}     -> the GitHub login the loop commits as
 #   {{ISSUE_PREFIX}}  -> tracker issue prefix, e.g. ABC (branch names embed "abc-123")
 #
-# Cadence:  INTERVAL=120 ./reconcile-merged.sh     (default 120s)
+# Cadence:  INTERVAL=900 ./reconcile-merged.sh     (default 900s — it re-paginates the whole
+#           project each pass, so a tight loop is a permanently growing scan for zero freshness gain;
+#           the PR watcher is the fast path, this is the level-triggered repair)
 # Once:     ONCE=1 ./reconcile-merged.sh
 
 set -uo pipefail
@@ -22,7 +24,7 @@ ENV_FILE="{{ENV_FILE}}"
 REPOS="{{REPOS}}"
 AUTHOR="{{GH_AUTHOR}}"
 ISSUE_PREFIX="{{ISSUE_PREFIX}}"
-INTERVAL="${INTERVAL:-120}"
+INTERVAL="${INTERVAL:-900}"
 
 # shellcheck disable=SC1090
 set -a; . "$ENV_FILE" 2>/dev/null; set +a

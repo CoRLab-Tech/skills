@@ -1,6 +1,6 @@
 ---
 name: taskloop
-description: Autonomous task-execution loop that pulls actionable issues from a task tracker (Linear, Jira, Plane, or GitHub Issues), branches from main, implements, tests, opens a GitHub PR with no AI attribution, and self-paces the next iteration. Use when the user runs `/taskloop init` (one-time per-project setup that picks a provider and generates the loop's memory/config files), `/taskloop start` (re-arms the Monitor + ScheduleWakeup so the loop resumes for the current project), `/taskloop stop`, `/taskloop add-rule [slug]`, or `/taskloop status`. Also triggers when the user says "start" / "porneste" / "resume loop" in a working directory that already has a taskloop config under `~/.claude/projects/SLUG/memory/`.
+description: Autonomous task-execution loop that pulls actionable issues from a task tracker (Linear, Jira, Plane, or GitHub Issues), branches from main, implements, tests, opens a GitHub PR with no AI attribution, and self-paces the next iteration. Use when the user runs `/taskloop init` (one-time per-project setup that picks a provider and generates the loop's memory/config files), `/taskloop start` (re-arms the Monitor + ScheduleWakeup so the loop resumes for the current project), `/taskloop stop`, `/taskloop sync` (hot-repairs drifted/corrupt/missing memory files and adopts new skill rules without stopping the loop), `/taskloop add-rule [slug]`, or `/taskloop status`. Also triggers when the user says "start" / "porneste" / "resume loop" in a working directory that already has a taskloop config under `~/.claude/projects/SLUG/memory/`.
 ---
 
 # Taskloop
@@ -20,6 +20,7 @@ The skill is invoked with an `args` string. Parse the first whitespace-delimited
 | `init` (or empty args) | One-time per-project setup | `references/workflows/init.md` |
 | `start` | Re-arm Monitor + ScheduleWakeup for current project | `references/workflows/start.md` |
 | `stop` | TaskStop monitor, no further wakeups | `references/workflows/stop.md` |
+| `sync` (`--check` for dry-run) | Hot-repair drifted/corrupt/missing memory files + adopt new skill rules, without stopping the loop; then hot-reload in-flight agents | `references/workflows/sync.md` |
 | `add-rule <slug>` | Add a project-specific feedback rule | `references/workflows/add-rule.md` |
 | `status` | Print monitor task id, last actionable issue, last PR | `references/workflows/status.md` |
 | anything else | Print usage and stop | inline below |
@@ -29,7 +30,7 @@ If the args is empty, default to `init` only when the project's memory dir doesn
 **Usage line (print when args don't parse):**
 
 ```
-/taskloop <init|start|stop|add-rule <slug>|status>
+/taskloop <init|start|stop|sync [--check]|add-rule <slug>|status>
 ```
 
 ## Provider concept
@@ -50,6 +51,7 @@ Per-project, under `~/.claude/projects/<slugified-cwd>/memory/`:
 
 ```
 .env                            # API keys, project IDs, LOOP_STRATEGY, LOOP_AUTOMERGE, chmod 600
+.render-manifest.json           # every placeholder value used to render this dir; lets `sync` re-render deterministically, chmod 600
 .monitor-state                  # ephemeral, last queue snapshot
 .pr-feedback-state              # PR registry (repo+number+issue+merge lane+gatedHead+ownActivity, written at gh pr create) + per-PR last-seen feedback timestamps; drives sweep/merge/WIP-cap; survives stop/start
 .queue-plan                     # last LOOP-PLAN triage + queue signature (ids/titles/desc-hashes/human-comment counts — never the loop's own plan comments)
@@ -93,9 +95,9 @@ feedback/<slug>.md              # universal + project-specific rules
 | Mechanism | Enforces |
 |---|---|
 | `hook-agent-routing.mjs` (PreToolUse on `Task\|Agent`) | the model/effort ladder; also writes the append-only spawn ledger |
-| `hook-loop-guards.mjs` (PreToolUse on `Bash`) | `gates-run-foreground` and `no-ai-attribution` — both denied, not merely discouraged |
+| `hook-loop-guards.mjs` (PreToolUse on `Bash\|ScheduleWakeup`) | `gates-run-foreground`, `no-ai-attribution` (commits AND PR bodies), `pr-visual-evidence`, `dedupe-before-filing`, `never-self-halt-loop` (a self-issued `stop:true` is denied), and the merge-safety floor (a draft, red-check, or unapproved-non-auto-lane `gh pr merge` is denied) |
 | `targeted-regate.mjs` schema | a review finding without a verbatim `quote` cannot exist |
-| `monitor-prs.sh` / `reconcile-merged.sh` | merge, comment and CI events arrive as signals, not as chat |
+| `monitor-prs.sh` / `reconcile-merged.sh` (both armed as Monitors at `start`) | merge, comment and CI events arrive as signals, not as chat; the reconcile is level-triggered repair, actually scheduled |
 | `usage-rollup.mjs` | the spend record; the loop cannot forget to write it |
 | GitHub | a draft PR cannot be merged |
 
@@ -139,6 +141,7 @@ Read these only when the workflow points to them:
 - `references/workflows/init.md` — full init interview + file generation
 - `references/workflows/start.md` — Monitor + ScheduleWakeup arming
 - `references/workflows/stop.md` — clean teardown
+- `references/workflows/sync.md` — hot integrity-repair + skill-version adoption without stopping the loop; hot-reloads in-flight agents
 - `references/workflows/add-rule.md` — adding a project-specific feedback rule
 - `references/workflows/status.md` — diagnostics
 - `references/providers/linear.md` — Linear adapter (verified end-to-end)

@@ -37,7 +37,7 @@ curl -sS -X POST https://api.linear.app/graphql \
 
 A 200 with `data.project.issues.nodes` (possibly empty) means auth + project ID are valid. A 401 means the API key is wrong; a `null` project means the project ID is wrong.
 
-The ready status name is `Todo` (verbatim). Do **not** include `Backlog`, `In Progress`, `Ready for Review`, or `Done` — see the `only-ready-not-backlog` feedback rule.
+The ready status name is `Todo` (verbatim). Do **not** include `Backlog`, `In Progress`, `Ready for Review`, or `Done` — see the `queue-triage-plan` feedback rule (only the explicit ready status is a work queue).
 
 ## Get-issue recipe
 
@@ -101,6 +101,7 @@ Supported targets used by the loop:
 |---|---|
 | `in_progress` | `In Progress` |
 | `in_review` | `Ready for Review` |
+| `blocked` | `Blocked` — the landing state for timeboxed/unactionable tickets (`status-mirrors-work`, `fail-gracefully-timebox`). Stock Linear workflows lack it: at init, create it (type `backlog`) or map to an existing equivalent, and cache its UUID with the others |
 | `done` | `Done` |
 
 ## Post-comment recipe

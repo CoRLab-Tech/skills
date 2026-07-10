@@ -3,6 +3,9 @@
 # Emits one stdout block per change in the configured ready queue so the
 # harness's Monitor tool wakes Claude on every delta.
 #
+# Uses /rest/api/3/search/jql (the old /rest/api/3/search endpoint was removed
+# by Atlassian in 2025) with nextPageToken pagination.
+#
 # Placeholders substituted at init time:
 #   {{ENV_FILE}}   -> $MEM/.env
 #   {{STATE_FILE}} -> $MEM/.monitor-state
@@ -14,6 +17,9 @@ set -o pipefail
 ENV_FILE="{{ENV_FILE}}"
 STATE_FILE="{{STATE_FILE}}"
 INTERVAL="${INTERVAL:-60}"
+# The whole ready queue must be visible: queue-triage-plan computes order/group/depends-on across ALL
+# ready tickets, so a silent truncation would corrupt the plan. Paginate; warn if we hit the cap.
+MAX_PAGES="${MAX_PAGES:-10}"
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "[monitor] error: env file not found at $ENV_FILE" >&2
@@ -33,49 +39,90 @@ while true; do
     fi
   done
   if [ -n "$MISSING" ]; then
-    echo "[monitor] error: missing env var(s):$MISSING"
-    sleep "$INTERVAL"
-    continue
+    # Once per failure episode, not once per tick — a 60s spam loop is worse than the outage.
+    if [ ! -f "$STATE_FILE.envfail" ]; then
+      echo "[monitor] error: missing env var(s):$MISSING"
+      : > "$STATE_FILE.envfail"
+    fi
+    sleep "$INTERVAL"; continue
   fi
+  rm -f "$STATE_FILE.envfail"
 
   JQL="project=$JIRA_PROJECT_KEY AND status=\"$JIRA_READY_STATUS\" ORDER BY updated DESC"
 
-  RESPONSE=$(curl -sS -G \
-    -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-    -H "Accept: application/json" \
-    --max-time 30 \
-    --data-urlencode "jql=$JQL" \
-    --data-urlencode "fields=summary,status,priority,updated" \
-    --data-urlencode "maxResults=25" \
-    "https://$JIRA_HOST/rest/api/3/search" 2>/dev/null || true)
-
-  if [ -z "$RESPONSE" ]; then
-    sleep "$INTERVAL"
-    continue
-  fi
-
-  SIG=$(printf '%s' "$RESPONSE" \
-    | python3 -c '
+  # Paginate the full nextPageToken chain, accumulating "key|status|updated|summary" lines.
+  # An auth failure and an empty queue MUST NOT look the same: a bad token answers 401/errorMessages,
+  # an empty queue answers issues: []. First line of the verdict is OK or FAIL|<why>.
+  VERDICT=""
+  TOKEN=""
+  PAGES=0
+  ROWS=""
+  while :; do
+    if [ "$PAGES" -ge "$MAX_PAGES" ]; then VERDICT="OK-CAPPED"; break; fi
+    HTTP=$(curl -sS -G -o "$STATE_FILE.body" -w '%{http_code}' \
+      -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+      -H "Accept: application/json" \
+      --max-time 30 \
+      --data-urlencode "jql=$JQL" \
+      --data-urlencode "fields=summary,status,priority,updated" \
+      --data-urlencode "maxResults=100" \
+      ${TOKEN:+--data-urlencode "nextPageToken=$TOKEN"} \
+      "https://$JIRA_HOST/rest/api/3/search/jql" 2>/dev/null) || HTTP=000
+    if [ "$HTTP" = "401" ] || [ "$HTTP" = "403" ]; then VERDICT="FAIL|HTTP $HTTP — bad or expired JIRA_API_TOKEN"; break; fi
+    if [ "$HTTP" != "200" ]; then VERDICT="FAIL|HTTP $HTTP"; break; fi
+    PAGE=$(python3 -c '
 import json, sys
 try:
-    data = json.load(sys.stdin)
-    issues = data.get("issues", [])
+    data = json.load(open(sys.argv[1]))
 except Exception:
-    sys.exit(0)
+    print("FAIL|unreadable response body"); sys.exit(0)
+if data.get("errorMessages") or data.get("errors"):
+    print("FAIL|" + str(data.get("errorMessages") or data.get("errors"))[:120]); sys.exit(0)
+issues = data.get("issues", [])
+print("NEXT|" + str(data.get("nextPageToken") or ""))
+# NB: no backslash-escaped quotes inside f-string expressions — SyntaxError on python < 3.12.
 for it in issues:
     f = it.get("fields", {})
+    key = it.get("key", "")
     status = (f.get("status") or {}).get("name", "")
-    updated = f.get("updated", "")
-    title = f.get("summary", "")
-    print(f"{it.get(\"key\",\"\")}|{status}|{updated}|{title}")
-' 2>/dev/null | sort || true)
+    upd = f.get("updated", "")
+    summ = f.get("summary", "")
+    print(f"{key}|{status}|{upd}|{summ}")
+' "$STATE_FILE.body" 2>/dev/null) || { VERDICT="FAIL|parser error"; break; }
+    case "$PAGE" in FAIL\|*) VERDICT="$PAGE"; break;; esac
+    TOKEN=$(printf '%s\n' "$PAGE" | head -1 | cut -d'|' -f2-)
+    ROWS="$ROWS
+$(printf '%s\n' "$PAGE" | tail -n +2)"
+    PAGES=$((PAGES + 1))
+    [ -z "$TOKEN" ] && { VERDICT="OK"; break; }
+  done
+  rm -f "$STATE_FILE.body"
+
+  case "$VERDICT" in
+    FAIL\|*)
+      # Emit once per failure episode; the marker clears on the first success, re-arming the alarm.
+      if [ ! -f "$STATE_FILE.authfail" ]; then
+        echo "[monitor] error: Jira query failed — ${VERDICT#FAIL|}"
+        echo "[monitor] the ready queue is UNKNOWN, not empty. Check JIRA_API_TOKEN / host / project."
+        : > "$STATE_FILE.authfail"
+      fi
+      sleep "$INTERVAL"; continue
+      ;;
+    OK-CAPPED)
+      echo "[monitor] warning: pagination hit the ${MAX_PAGES}-page cap — the triage plan may be incomplete. Raise MAX_PAGES."
+      ;;
+  esac
+  rm -f "$STATE_FILE.authfail"
+
+  SIG=$(printf '%s' "$ROWS" | grep . | sort || true)
 
   PREV=""
   if [ -f "$STATE_FILE" ]; then
     PREV=$(cat "$STATE_FILE")
   fi
 
-  if [ "$SIG" != "$PREV" ]; then
+  # `[ -n "$SIG$PREV" ]` keeps a first run against an empty queue silent — there is no delta to report.
+  if [ "$SIG" != "$PREV" ] && [ -n "$SIG$PREV" ]; then
     COUNT=$(printf '%s' "$SIG" | grep -c . || true)
     echo "[monitor] queue changed: ${COUNT} actionable issue(s)"
     printf '%s\n' "$SIG" | head -n 5 | while IFS='|' read -r ID STATUS UPDATED TITLE; do

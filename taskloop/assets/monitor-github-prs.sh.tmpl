@@ -81,11 +81,18 @@ for (const pr of prs) {
   if (!pr || !pr.repo || !pr.number) continue;
   const key = `${pr.repo}#${pr.number}`;
   try {
-    const out = execFileSync("gh", ["pr", "view", String(pr.number), "--repo", pr.repo,
-      "--json", "state,mergedAt,comments,reviews,statusCheckRollup"], { encoding: "utf8", timeout: 30000 });
-    const j = JSON.parse(out);
-    const ci = (j.statusCheckRollup || []).map(c => `${c.name || c.context || "?"}:${c.conclusion || c.state || "pending"}`).sort().join(",");
-    lines.push(`${key}|${pr.issue || ""}|${j.state}|${j.mergedAt || ""}|c${(j.comments || []).length}|r${(j.reviews || []).length}|${ci}`);
+    // Counts via GraphQL totalCount, not full bodies: `--json comments,reviews` downloads every
+    // comment and review body each tick just to .length them — heavy ×N PRs ×tick, and gh caps
+    // those arrays at 100, so activity past the 100th item produced NO delta. totalCount is exact
+    // and a few bytes.
+    const [owner, name] = String(pr.repo).split("/");
+    const q = `query($o:String!,$n:String!,$num:Int!){repository(owner:$o,name:$n){pullRequest(number:$num){state mergedAt comments{totalCount} reviews(first:1){totalCount} statusCheckRollup:commits(last:1){nodes{commit{statusCheckRollup{contexts(first:50){nodes{__typename ... on CheckRun{name conclusion status} ... on StatusContext{context state}}}}}}}}}}`;
+    const out = execFileSync("gh", ["api", "graphql", "-f", `query=${q}`,
+      "-F", `o=${owner}`, "-F", `n=${name}`, "-F", `num=${pr.number}`], { encoding: "utf8", timeout: 30000 });
+    const pj = JSON.parse(out).data.repository.pullRequest;
+    const ctxs = (((pj.statusCheckRollup.nodes[0] || {}).commit || {}).statusCheckRollup || {}).contexts;
+    const ci = ((ctxs && ctxs.nodes) || []).map(c => `${c.name || c.context || "?"}:${c.conclusion || c.state || c.status || "pending"}`).sort().join(",");
+    lines.push(`${key}|${pr.issue || ""}|${pj.state}|${pj.mergedAt || ""}|c${pj.comments.totalCount}|r${pj.reviews.totalCount}|${ci}`);
   } catch (e) {
     if (prev.has(key)) lines.push(prev.get(key)); // transient failure → carry forward, no delta
   }

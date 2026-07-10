@@ -3,7 +3,7 @@
 # Emits one stdout block per change in the ready queue so the harness's
 # Monitor tool wakes Claude on every delta.
 #
-# The background monitor MUST use the REST API (curl): a bash poller cannot
+# The background monitor MUST use the REST API (curl/fetch): a bash poller cannot
 # call MCP tools. The in-conversation loop verbs use the Plane MCP instead —
 # see references/providers/plane.md.
 #
@@ -18,6 +18,11 @@ set -o pipefail
 ENV_FILE="{{ENV_FILE}}"
 STATE_FILE="{{STATE_FILE}}"
 INTERVAL="${INTERVAL:-60}"
+# Pagination bound: pages of 100. The whole ready queue must be visible — queue-triage-plan computes
+# order/group/depends-on across ALL ready tickets — and the READY filter runs over the FULL issue
+# list, so stopping at page 1 would hide any ready ticket older than the 100 most-recently-updated
+# items. Paginate to the end; warn if we ever hit the page cap.
+MAX_PAGES="${MAX_PAGES:-20}"
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "[monitor] error: env file not found at $ENV_FILE" >&2
@@ -38,61 +43,89 @@ while true; do
     fi
   done
   if [ -n "$MISSING" ]; then
-    echo "[monitor] error: missing env var(s):$MISSING"
-    sleep "$INTERVAL"
-    continue
+    # Once per failure episode, not once per tick — a 60s spam loop is worse than the outage.
+    if [ ! -f "$STATE_FILE.envfail" ]; then
+      echo "[monitor] error: missing env var(s):$MISSING"
+      : > "$STATE_FILE.envfail"
+    fi
+    sleep "$INTERVAL"; continue
   fi
+  rm -f "$STATE_FILE.envfail"
 
   # PLANE_BASE_URL is the API root (e.g. https://plane.corlab.tech/api); the
   # public token API lives under /v1. Strip any trailing slash to be safe.
   API="${PLANE_BASE_URL%/}/v1/workspaces/$PLANE_WORKSPACE_SLUG/projects/$PLANE_PROJECT_ID/issues/"
 
-  RESPONSE=$(curl -sS -G \
-    -H "X-Api-Key: $PLANE_API_KEY" \
-    -H "Accept: application/json" \
-    --max-time 30 \
-    --data-urlencode "expand=state" \
-    --data-urlencode "order_by=-updated_at" \
-    --data-urlencode "per_page=100" \
-    "$API" 2>/dev/null || true)
-
-  if [ -z "$RESPONSE" ]; then
-    sleep "$INTERVAL"
-    continue
-  fi
-
-  # Build a stable signature: sorted "key|status|updatedAt|title" lines, keeping
-  # only work items whose expanded state name matches the ready status.
-  SIG=$(printf '%s' "$RESPONSE" \
-    | READY="$PLANE_READY_STATUS" IDENT="${PLANE_PROJECT_IDENTIFIER:-}" node -e '
-let buf = "";
-process.stdin.on("data", (c) => (buf += c)).on("end", () => {
-  const ready = process.env.READY || "Todo";
-  const ident = process.env.IDENT || "";
-  let data;
-  try { data = JSON.parse(buf); } catch (e) { process.exit(0); }
-  // Public list is cursor-paginated: work items live under "results".
-  const results = Array.isArray(data) ? data : (data && data.results) || [];
-  if (!Array.isArray(results)) process.exit(0);
-  for (const it of results) {
-    const st = (it && it.state) || {};
-    const name = (st && st.name) || "";
-    if (name !== ready) continue;
-    const seq = it.sequence_id == null ? "" : String(it.sequence_id);
-    const upd = it.updated_at || "";
-    const title = it.name || "";
-    const key = ident ? ident + "-" + seq : seq;
-    console.log(key + "|" + name + "|" + upd + "|" + title);
+  # Paginate the full cursor chain in one node process (node >= 18: global fetch), then filter by
+  # the ready state. An auth failure and an empty queue MUST NOT look the same: a bad key answers
+  # {"detail": ...} / 401, an empty queue answers results: []. First line is OK or FAIL|<why>.
+  VERDICT=$(API="$API" KEY="$PLANE_API_KEY" READY="$PLANE_READY_STATUS" \
+            IDENT="${PLANE_PROJECT_IDENTIFIER:-}" MAX_PAGES="$MAX_PAGES" node -e '
+const api = process.env.API, key = process.env.KEY;
+const ready = process.env.READY || "Todo";
+const ident = process.env.IDENT || "";
+const maxPages = parseInt(process.env.MAX_PAGES || "20", 10);
+(async () => {
+  const rows = [];
+  let cursor = null, pages = 0, capped = false;
+  while (true) {
+    if (pages >= maxPages) { capped = true; break; }
+    const url = new URL(api);
+    url.searchParams.set("expand", "state");
+    url.searchParams.set("order_by", "-updated_at");
+    url.searchParams.set("per_page", "100");
+    if (cursor) url.searchParams.set("cursor", cursor);
+    let res;
+    try {
+      res = await fetch(url, { headers: { "X-Api-Key": key, Accept: "application/json" }, signal: AbortSignal.timeout(30000) });
+    } catch (e) { console.log("FAIL|" + String(e.message || e).slice(0, 120)); return; }
+    if (res.status === 401 || res.status === 403) { console.log("FAIL|HTTP " + res.status + " — bad or expired PLANE_API_KEY"); return; }
+    if (!res.ok) { console.log("FAIL|HTTP " + res.status); return; }
+    let data;
+    try { data = await res.json(); } catch { console.log("FAIL|unreadable response body"); return; }
+    const results = Array.isArray(data) ? data : (data && data.results) || null;
+    if (!Array.isArray(results)) { console.log("FAIL|no results array (bad workspace/project id?)"); return; }
+    for (const it of results) {
+      const name = ((it && it.state) || {}).name || "";
+      if (name !== ready) continue;
+      const seq = it.sequence_id == null ? "" : String(it.sequence_id);
+      const keyed = ident ? ident + "-" + seq : seq;
+      rows.push(keyed + "|" + name + "|" + (it.updated_at || "") + "|" + (it.name || ""));
+    }
+    pages += 1;
+    if (data && data.next_page_results && data.next_cursor) cursor = data.next_cursor;
+    else break;
   }
-});
-' 2>/dev/null | sort || true)
+  console.log(capped ? "OK-CAPPED" : "OK");
+  for (const r of rows.sort()) console.log(r);
+})();
+' 2>/dev/null || printf 'FAIL|node runner error')
+
+  case "$VERDICT" in
+    FAIL\|*)
+      # Emit once per failure episode; the marker clears on the first success, re-arming the alarm.
+      if [ ! -f "$STATE_FILE.authfail" ]; then
+        echo "[monitor] error: Plane query failed — ${VERDICT#FAIL|}"
+        echo "[monitor] the ready queue is UNKNOWN, not empty. Check PLANE_API_KEY / ids."
+        : > "$STATE_FILE.authfail"
+      fi
+      sleep "$INTERVAL"; continue
+      ;;
+    OK-CAPPED*)
+      echo "[monitor] warning: pagination hit the ${MAX_PAGES}-page cap — the triage plan may be incomplete. Raise MAX_PAGES."
+      ;;
+  esac
+  rm -f "$STATE_FILE.authfail"
+
+  SIG=$(printf '%s' "$VERDICT" | tail -n +2)
 
   PREV=""
   if [ -f "$STATE_FILE" ]; then
     PREV=$(cat "$STATE_FILE")
   fi
 
-  if [ "$SIG" != "$PREV" ]; then
+  # `[ -n "$SIG$PREV" ]` keeps a first run against an empty queue silent — there is no delta to report.
+  if [ "$SIG" != "$PREV" ] && [ -n "$SIG$PREV" ]; then
     COUNT=$(printf '%s' "$SIG" | grep -c . || true)
     echo "[monitor] queue changed: ${COUNT} actionable issue(s)"
     printf '%s\n' "$SIG" | head -n 5 | while IFS='|' read -r ID STATUS UPDATED TITLE; do

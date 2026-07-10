@@ -32,16 +32,36 @@ def stamp(terms, hits, live):
     except OSError:
         pass
 
-PID  = "8c8d579a-1aec-4efc-ae39-872c9ae4c367"
-SLUG = "corlab"
-ROOT = "https://plane.corlab.tech"
+# Rendered at init from the project's ids (see init.md — never leave another project's values here).
+PID   = "8c8d579a-1aec-4efc-ae39-872c9ae4c367"
+SLUG  = "corlab"
+ROOT  = "https://plane.corlab.tech"
+IDENT = "QUBITFREIG"   # PLANE_PROJECT_IDENTIFIER — the key prefix printed in results
 
 # States where an existing ticket means "do not file a new one"
 LIVE = {"Backlog", "Todo", "In Progress", "Blocked", "In review"}
 
 
 def plane_key():
-    cfg = json.load(open(os.path.expanduser("~/.claude.json")))
+    # .env is the authoritative credential store for every loop component (init renders it; the
+    # monitors re-source it every tick). The MCP registration is only a fallback: init explicitly
+    # supports declining MCP ("the loop still works via curl"), and on such installs a MCP-only
+    # lookup returns None, every request 401s, no stamp is written, and the fail-closed guard 4
+    # blocks ALL ticket filing. Read .env first, always.
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    try:
+        for line in open(env_path):
+            line = line.strip()
+            if line.startswith("PLANE_API_KEY="):
+                v = line.split("=", 1)[1].strip().strip('"').strip("'")
+                if v:
+                    return v
+    except OSError:
+        pass
+    try:
+        cfg = json.load(open(os.path.expanduser("~/.claude.json")))
+    except OSError:
+        return None
     def find(o):
         if isinstance(o, dict):
             for k, v in o.items():
@@ -103,7 +123,7 @@ def main():
     print(f"{len(hits)} match(es) across {len(rows)} tickets — {len(live)} still live.\n")
     for n, seq, st, name in hits[:15]:
         flag = "  <== LIVE, comment here instead of filing" if st in LIVE else ""
-        print(f"  [{n}/{len(terms)}] QUBITFREIG-{seq:<4d} {st:12s} {name[:66]}{flag}")
+        print(f"  [{n}/{len(terms)}] {IDENT}-{seq:<4d} {st:12s} {name[:66]}{flag}")
 
     print()
     if live:

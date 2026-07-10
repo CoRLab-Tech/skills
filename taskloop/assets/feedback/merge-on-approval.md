@@ -9,6 +9,8 @@ An approved PR the loop opened is the loop's to merge. During the per-tick PR sw
 
 **This rule is the REVIEW lane.** With `LOOP_AUTOMERGE=on`, a ticket that carries no risk signal may merge through the auto lane instead — without waiting for an approval — per [[feedback-automerge-risk-lanes]]. A PR any human has touched (a review, a comment, anything) always belongs to THIS rule, whatever its lane said: once a human engages, only their approval merges it.
 
+**The mechanical floor:** `hook-loop-guards.mjs` guard 6 denies a `gh pr merge` of a draft, red-check, or unapproved PR whose registry lane is not `auto` — so the coarse conditions cannot be skipped by forgetting. The finer conditions below (approval covers head, thread pagination, pre-merge recheck) remain this rule's re-checks; the guard is a floor, not the ceiling.
+
 **Why:** The human already said yes — that's the approval. Making them come back later to click "merge" adds latency for zero safety: CI is green and the review is done. The loop closing its own delivery cycle is the whole point of the autonomy.
 
 **How to apply:**
