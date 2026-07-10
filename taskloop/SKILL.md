@@ -20,6 +20,7 @@ The skill is invoked with an `args` string. Parse the first whitespace-delimited
 | `init` (or empty args) | One-time per-project setup | `references/workflows/init.md` |
 | `start` | Re-arm Monitor + ScheduleWakeup for current project | `references/workflows/start.md` |
 | `stop` | TaskStop monitor, no further wakeups | `references/workflows/stop.md` |
+| `sync` (`--check` for dry-run) | Hot-repair drifted/corrupt/missing memory files + adopt new skill rules, without stopping the loop; then hot-reload in-flight agents | `references/workflows/sync.md` |
 | `add-rule <slug>` | Add a project-specific feedback rule | `references/workflows/add-rule.md` |
 | `status` | Print monitor task id, last actionable issue, last PR | `references/workflows/status.md` |
 | anything else | Print usage and stop | inline below |
@@ -29,7 +30,7 @@ If the args is empty, default to `init` only when the project's memory dir doesn
 **Usage line (print when args don't parse):**
 
 ```
-/taskloop <init|start|stop|add-rule <slug>|status>
+/taskloop <init|start|stop|sync [--check]|add-rule <slug>|status>
 ```
 
 ## Provider concept
@@ -50,6 +51,7 @@ Per-project, under `~/.claude/projects/<slugified-cwd>/memory/`:
 
 ```
 .env                            # API keys, project IDs, LOOP_STRATEGY, LOOP_AUTOMERGE, chmod 600
+.render-manifest.json           # every placeholder value used to render this dir; lets `sync` re-render deterministically, chmod 600
 .monitor-state                  # ephemeral, last queue snapshot
 .pr-feedback-state              # PR registry (repo+number+issue+merge lane+gatedHead+ownActivity, written at gh pr create) + per-PR last-seen feedback timestamps; drives sweep/merge/WIP-cap; survives stop/start
 .queue-plan                     # last LOOP-PLAN triage + queue signature (ids/titles/desc-hashes/human-comment counts — never the loop's own plan comments)
@@ -139,6 +141,7 @@ Read these only when the workflow points to them:
 - `references/workflows/init.md` — full init interview + file generation
 - `references/workflows/start.md` — Monitor + ScheduleWakeup arming
 - `references/workflows/stop.md` — clean teardown
+- `references/workflows/sync.md` — hot integrity-repair + skill-version adoption without stopping the loop; hot-reloads in-flight agents
 - `references/workflows/add-rule.md` — adding a project-specific feedback rule
 - `references/workflows/status.md` — diagnostics
 - `references/providers/linear.md` — Linear adapter (verified end-to-end)

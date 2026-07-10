@@ -366,6 +366,10 @@ Render `assets/restart-instructions.md.tmpl`. Same placeholder set. The body exp
 
 Copy every file from `assets/feedback/` into `$MEM/feedback/` verbatim. These are already provider-neutral.
 
+### `.render-manifest.json` (so `sync` can re-render deterministically)
+
+Write every placeholder value used above into `$MEM/.render-manifest.json`, then `chmod 600` (it echoes `.env`-derived values). This is the map the `sync` workflow (`references/workflows/sync.md`) reads to re-render a drifted or deleted file without re-interviewing the owner. Include at least: `PROVIDER`, `PROJECT_NAME`, `REPO`, `REPOS`, `GH_AUTHOR`, `BRANCH_PREFIX`, `TEST_CMD`, `EVIDENCE_DIR`, `ISSUE_PREFIX`/`ISSUE_REF`/`ISSUE_LINK_KEYWORD`, `READY_STATUS`/`REVIEW_STATUS`/`BLOCKED_STATUS`, the routing profile (`LADDER`, `TOP_MODEL`, `DEEP_MODEL`, `BALANCED_MODEL`), the tracker create regexes, and `START_HOUR`/`END_HOUR` if review-recall was installed. `.env`-managed toggles (`LOOP_STRATEGY`, `LOOP_AUTOMERGE`) stay authoritative in `.env`; the manifest records only what rendering needs.
+
 ## Step 6 — Optional CLAUDE.md tag
 
 Ask: "Append a short note to the project's CLAUDE.md so future Claude sessions know taskloop is configured?"
@@ -388,12 +392,13 @@ Print a summary:
    Strategy:  <auto|fast|balanced|heavy>
    Automerge: <on|off>
    Memory:    ~/.claude/projects/<slug>/memory/
-   Files:     .env (chmod 600), monitor.sh, monitor-prs.sh, hook-agent-routing.mjs,
-              hook-loop-guards.mjs, usage-rollup.mjs, targeted-regate.mjs, MEMORY.md, agent-brief.md,
-              autonomous-loop.md, restart-instructions.md, model-usage-log.md,
-              telemetry/ (append-only spend record), feedback/ (39 files)
+   Files:     .env (chmod 600), .render-manifest.json (chmod 600), monitor.sh, monitor-prs.sh,
+              hook-agent-routing.mjs, hook-loop-guards.mjs, usage-rollup.mjs, targeted-regate.mjs,
+              MEMORY.md, agent-brief.md, autonomous-loop.md, restart-instructions.md,
+              model-usage-log.md, telemetry/ (append-only spend record), feedback/ (39 files)
    Next:      run `/taskloop start` to arm the Monitor + ScheduleWakeup,
               or just type "start" in this directory in any future session.
+              Later, `/taskloop sync` hot-repairs drift and adopts new skill rules without a stop.
 ```
 
 ## Idempotency notes
