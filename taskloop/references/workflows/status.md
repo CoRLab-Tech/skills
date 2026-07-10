@@ -16,6 +16,7 @@ Read `$MEM/.env`. Detect the provider:
 - If `LINEAR_API_KEY` is present → provider is `Linear`
 - Else if `PLANE_API_KEY` is present → provider is `Plane`
 - Else if `JIRA_API_TOKEN` is present → provider is `Jira`
+- Else if `GITHUB_REPO` is present → provider is `GitHub Issues`
 - Else → print `unable to detect provider from .env` and stop
 
 Also read `LOOP_STRATEGY` (default `auto`) and `LOOP_AUTOMERGE` (default `off`) for the summary.
