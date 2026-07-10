@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""Before filing ANY ticket, search every existing one for the same root cause.
+
+    python3 find-existing-ticket.py "color-border-strong" "1.52:1" "contrast"
+
+Searches title + description of EVERY ticket in the project, in EVERY state —
+Backlog, Todo, In Progress, Blocked, In review, Merged, Done, Cancelled — and
+prints what it finds, loudest first. Merged/Cancelled matches matter too: a
+Cancelled hit means the finding was already judged not worth a row, and a
+Merged hit means it may already be fixed on main.
+
+Exit 0 always. Read the output and decide; this tool does not decide for you.
+
+Terms are OR-ed; a ticket matching more terms ranks higher. Give it the ROOT
+CAUSE (a token name, a function, a file, an error string) — not the symptom.
+"""
+import json, re, sys, html, urllib.request, os, datetime
+
+MEM = os.path.dirname(os.path.abspath(__file__))
+
+
+def stamp(terms, hits, live):
+    """Record that the search RAN. hook-loop-guards.mjs denies ticket creation
+    without a stamp fresher than 15 minutes — this line is what unlocks it."""
+    try:
+        os.makedirs(f"{MEM}/telemetry", exist_ok=True)
+        with open(f"{MEM}/telemetry/dedupe-stamps.jsonl", "a") as f:
+            f.write(json.dumps({
+                "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "terms": terms, "hits": hits, "live": live,
+            }) + "\n")
+    except OSError:
+        pass
+
+PID  = "8c8d579a-1aec-4efc-ae39-872c9ae4c367"
+SLUG = "corlab"
+ROOT = "https://plane.corlab.tech"
+
+# States where an existing ticket means "do not file a new one"
+LIVE = {"Backlog", "Todo", "In Progress", "Blocked", "In review"}
+
+
+def plane_key():
+    cfg = json.load(open(os.path.expanduser("~/.claude.json")))
+    def find(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if k == "plane":
+                    return v["env"]["PLANE_API_KEY"]
+                r = find(v)
+                if r: return r
+        elif isinstance(o, list):
+            for v in o:
+                r = find(v)
+                if r: return r
+    return find(cfg)
+
+
+def strip(h):
+    t = re.sub(r"<[^>]+>", " ", h or "")
+    return html.unescape(re.sub(r"\s+", " ", t))
+
+
+def main():
+    terms = [t.lower() for t in sys.argv[1:] if t.strip()]
+    if not terms:
+        print("usage: find-existing-ticket.py <root-cause-term> [more terms...]")
+        print("       give the CAUSE (token name, function, file, error string), not the symptom")
+        return
+
+    key = plane_key()
+    base = f"{ROOT}/api/v1/workspaces/{SLUG}/projects/{PID}/"
+    def api(p):
+        r = urllib.request.Request(base + p, headers={"X-API-Key": key})
+        with urllib.request.urlopen(r, timeout=40) as resp:
+            return json.load(resp)
+
+    states = {s["id"]: s["name"] for s in api("states/?per_page=100")["results"]}
+    rows, cur = [], None
+    while True:
+        d = api("issues/?per_page=100" + (f"&cursor={cur}" if cur else ""))
+        rows += d["results"]
+        if not d.get("next_page_results"):
+            break
+        cur = d["next_cursor"]
+
+    hits = []
+    for i in rows:
+        hay = (i["name"] + " " + strip(i.get("description_html"))).lower()
+        n = sum(1 for t in terms if t in hay)
+        if n:
+            hits.append((n, i["sequence_id"], states.get(i["state"], "?"), i["name"]))
+    hits.sort(key=lambda h: (-h[0], h[1]))
+
+    if not hits:
+        stamp(terms, 0, 0)
+        print(f"NO MATCH for {terms!r} across {len(rows)} tickets.")
+        print("Nothing exists for this root cause. Filing a new ticket is justified.")
+        return
+
+    live = [h for h in hits if h[2] in LIVE]
+    stamp(terms, len(hits), len(live))
+    print(f"{len(hits)} match(es) across {len(rows)} tickets — {len(live)} still live.\n")
+    for n, seq, st, name in hits[:15]:
+        flag = "  <== LIVE, comment here instead of filing" if st in LIVE else ""
+        print(f"  [{n}/{len(terms)}] QUBITFREIG-{seq:<4d} {st:12s} {name[:66]}{flag}")
+
+    print()
+    if live:
+        print("DO NOT FILE. A live ticket already carries this root cause.")
+        print("Add your evidence as a comment on the highest-scoring live match above.")
+    else:
+        print("All matches are closed (Merged/Done/Cancelled).")
+        print("A Merged match may mean this is ALREADY FIXED on main — verify before filing.")
+        print("A Cancelled match means someone already judged it not worth a row — respect that.")
+
+
+if __name__ == "__main__":
+    main()

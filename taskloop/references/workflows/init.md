@@ -211,9 +211,22 @@ Besides routing, this hook writes the **append-only spawn ledger** to `$MEM/tele
 
 ### `hook-loop-guards.mjs` (the rules that refuse to be ignored)
 
-Render `assets/hook-loop-guards.mjs.tmpl` substituting `{{MEM}}`. Write to `$MEM/hook-loop-guards.mjs`.
+Render `assets/hook-loop-guards.mjs.tmpl` substituting four placeholders. Write to `$MEM/hook-loop-guards.mjs`.
 
-It denies exactly two things, both of which agents demonstrably did anyway when they were only prose: **backgrounding a gate command inside a subagent** (the background child dies with the subagent's turn — a silent dead run), and **committing a message that carries AI attribution**. Denials feed `permissionDecisionReason` back to the model, which reads it and retries, and are appended to `telemetry/guards-*.jsonl`.
+- `{{MEM}}` — the absolute memory-dir path.
+- `{{EVIDENCE_DIR}}` — the repo-relative directory where UI screenshots are committed (ask, or infer from an existing path; `docs/evidence` is the common choice).
+- `{{TRACKER_CREATE_CMD_RE}}` — regex **source** matching a command that CREATES a ticket for this provider (it lands inside `new RegExp('…')`, so escape backslashes as for a JS string literal). It must match creation ONLY — never a comment POST, never a GET, because commenting on an existing ticket is exactly what the dedupe rule prefers. Per provider:
+  - **plane**: a POST whose URL *terminates* at `/issues/` — order-independent via a lookahead: `(?=[\\s\\S]*(-X|--request)\\s*[\\x27\\x22]?POST)[\\s\\S]*\\/api\\/v1\\/workspaces\\/[^\\s\\x22\\x27]+\\/projects\\/[^\\s\\x22\\x27/]+\\/issues\\/?([\\x22\\x27]|\\s|$)` (`\x22`/`\x27` are the quote characters, spelled as hex escapes to survive the JS string literal); a URL continuing into `/issues/<id>/comments/` must not match.
+  - **github**: `(?:^|[;&|]\\s*|\\n\\s*)gh\\s+issue\\s+create\\b` — anchored to command start, same reason as the `gh pr ready` guard.
+  - **jira / linear**: the create endpoint from the provider reference, POST-only, terminal path.
+  - No command route → `(?!)` (matches nothing).
+- `{{TRACKER_CREATE_TOOLS_RE}}` — regex source matching the provider's MCP create-tool **names** (plane: `^mcp__plane__create_(work_item|intake_work_item)$`). No MCP tools → `(?!)`.
+
+Guard 3, `pr-visual-evidence`, blocks `gh pr ready` when a PR touches a UI surface and either commits no screenshots or commits them without naming them in the description. It shells out to `gh pr view`; any failure allows, so a missing `gh` or a bad PR number never produces a false denial. The escape hatch is the literal phrase `no visual surface` in the PR body — an assertion a reviewer can challenge, rather than a silent omission — and **every use of the escape is logged** to the ledger as `pr-visual-evidence-escape-used`, so a habit of escaping is one grep away from being noticed.
+
+Guard 4, `dedupe-before-filing`, blocks ticket creation (either route above) unless the project's `find-existing-ticket` script ran within the last **15 minutes** — the script appends a stamp to `$MEM/telemetry/dedupe-stamps.jsonl` on every run and the guard checks its freshness. Deliberately **fail-closed**, unlike the `gh` checks: the stamp is a local file the loop's own tooling writes, so an unreadable stamp means "the search did not run", not "the environment broke". This is what turns the follow-up filter's dedupe step from prose into mechanism. Install the script alongside: render the provider example from `assets/` (Plane: `find-existing-ticket.py.plane.example`) into `$MEM/find-existing-ticket.py` with the project's ids; for other providers port it — the contract is ~100 lines: search title+description of EVERY ticket in EVERY state for the given root-cause terms, print matches loudest-first with a DO-NOT-FILE verdict when a live match exists, and stamp the ledger.
+
+Guards 1 and 2 deny the two things agents demonstrably did when they were only prose: **backgrounding a gate command inside a subagent** (the background child dies with the subagent's turn — a silent dead run), and **committing a message that carries AI attribution**. Denials feed `permissionDecisionReason` back to the model, which reads it and retries, and every decision — denies and audited allows — is appended to `telemetry/guards-*.jsonl`.
 
 Known blind spot, worth stating: the commit guard reads the shell command, so it catches `-m "…"` and heredoc-fed messages, but **not** `git commit -F <file>` where the trailer lives in a file the hook never sees. Projects that care can add a repo-side `commit-msg` hook for that path.
 
@@ -232,7 +245,7 @@ In the **project's** `.claude/settings.local.json` (create if missing, MERGE if 
         ]
       },
       {
-        "matcher": "Bash",
+        "matcher": "Bash|<the provider's MCP create-tool names, e.g. mcp__plane__create_work_item|mcp__plane__create_intake_work_item>",
         "hooks": [
           { "type": "command", "command": "node <MEM>/hook-loop-guards.mjs" }
         ]
@@ -242,13 +255,18 @@ In the **project's** `.claude/settings.local.json` (create if missing, MERGE if 
 }
 ```
 
-Pipe-test the guard before moving on — a hook that is installed but never denies is worse than none, because it reads as protection:
+The guards matcher must name the tracker's MCP create tools alongside `Bash`, or guard 4 never sees MCP-route ticket creation. Providers with no MCP tools keep plain `Bash`.
+
+Pipe-test the guard before moving on — a hook that is installed but never denies is worse than none, because it reads as protection. Write each payload to a FILE and pipe the file: embedding a create-URL inline in your own shell command would trip guard 4 on the test itself.
 
 ```bash
 # must DENY (a subagent backgrounding a gate): agent_id is what marks a subagent
 echo '{"agent_id":"a1","tool_input":{"command":"pnpm test","run_in_background":true}}' | node "$MEM/hook-loop-guards.mjs"
 # must ALLOW (the same command in the foreground)
 echo '{"agent_id":"a1","tool_input":{"command":"pnpm test"}}' | node "$MEM/hook-loop-guards.mjs"
+# guard 4, MCP route: must DENY with no fresh stamp, ALLOW right after running find-existing-ticket.py
+echo '{"tool_name":"<mcp create tool>","tool_input":{"name":"t"}}' | node "$MEM/hook-loop-guards.mjs"
+# guard 4 must NOT fire on a comment POST — commenting is the alternative the rule prefers
 ```
 
 (`<MEM>` expanded to the absolute memory-dir path.) Pipe-test all four before moving on — this is the mechanical half of the `model-effort-routing` rule, and a hook that is installed but silently wrong is worse than none:

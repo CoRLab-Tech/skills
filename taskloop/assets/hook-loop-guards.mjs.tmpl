@@ -9,19 +9,36 @@
 //      pushed. DENY a backgrounded gate command inside a subagent.
 //   2. no-ai-attribution — a commit trailer naming Claude slips in whenever a model writes the
 //      message from habit. DENY the commit, anywhere, main session included.
+//   3. pr-visual-evidence — agents forget the screenshots on UI PRs, every single time. Prose did
+//      not fix it across dozens of runs. DENY `gh pr ready` when the PR touches a UI surface and
+//      either commits no screenshots, or commits them and never names them in the description.
+//      A draft may be evidence-less; a PR asking a human to look at it may not. Uses of the
+//      "no visual surface" escape are LOGGED (allowed, but visible), so a habit of escaping
+//      shows up in telemetry.
+//   4. dedupe-before-filing — gate lenses file N tickets for one root cause whenever the dedupe
+//      step is prose. DENY creating a tracker ticket unless the project's find-existing-ticket
+//      script ran within the last 15 minutes — the script stamps telemetry/dedupe-stamps.jsonl
+//      on every run. Search first, file second, mechanically.
 //
 // Denial feeds `permissionDecisionReason` back to the model, which reads it and retries. This is why
 // the reasons below are written as instructions, not scoldings.
 //
 // Placeholders substituted at init time:
-//   {{MEM}} -> the project's memory dir (absolute), for the guard ledger
+//   {{MEM}}                    -> the project's memory dir (absolute), for the guard ledger
+//   {{EVIDENCE_DIR}}           -> repo-relative dir where UI evidence is committed (e.g. docs/evidence)
+//   {{TRACKER_CREATE_CMD_RE}}  -> regex source matching a CLI/REST ticket-creation command for this
+//                                 provider (see init.md for per-provider values); use (?!) for none
+//   {{TRACKER_CREATE_TOOLS_RE}}-> regex source matching the provider's MCP create-tool NAMES;
+//                                 use (?!) when the provider has no MCP tools
 //
-// Install as a SECOND PreToolUse matcher, alongside the routing hook:
-//   { "matcher": "Bash", "hooks": [{ "type": "command", "command": "node <MEM>/hook-loop-guards.mjs" }] }
+// Install as a SECOND PreToolUse matcher, alongside the routing hook. The matcher must ALSO name the
+// tracker's MCP create tools, or rule 4 never sees them:
+//   { "matcher": "Bash|<mcp create tool names>", "hooks": [{ "type": "command", "command": "node <MEM>/hook-loop-guards.mjs" }] }
 // Matchers are regex over the tool name; multiple matcher groups all run, and the most restrictive
 // decision wins — so this hook and hook-agent-routing.mjs never conflict.
 
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 
 const MEM = '{{MEM}}';
 
@@ -31,6 +48,45 @@ const GATE = /\b(npm|pnpm|yarn|npx|nx|jest|vitest|pytest|go test|cargo test|mvn|
 const BACKGROUNDED_IN_CMD = /(^|\s)nohup\s|&\s*$|&\s*(#.*)?$|\bdisown\b|\bsetsid\b/;
 const ATTRIBUTION = /Co-Authored-By:\s*Claude|Generated with \[?Claude|🤖 Generated with|Co-authored-by:\s*Claude/i;
 
+// A UI surface is anything a reviewer could look at. Pure test files do not count.
+const UI_PATH = /(\.(tsx|jsx|vue|svelte)$)|(\.(css|scss|sass|less)$)/i;
+const NOT_UI  = /(\.(test|spec)\.[jt]sx?$)|(^|\/)__tests__\//i;
+// An image or video, wherever it appears. Deliberately loose: on a PRIVATE repo a bot cannot make an
+// image render inline (GitHub's camo proxy fetches the raw URL anonymously and gets a 404), so the
+// achievable bar is "committed to the branch AND named in the body", not "renders as a picture".
+const MEDIA_EXT = /\.(png|jpe?g|gif|webp|avif|mp4|webm)\b/i;
+// The one honest escape: a .tsx/.css file can change with nothing to look at. The author must SAY so.
+const NO_VISUAL_SURFACE = /no visual surface/i;
+// Where this project commits its evidence. Substituted at init.
+const EVIDENCE_DIR = '{{EVIDENCE_DIR}}';
+
+// Ticket creation, both routes: a command (curl POST / provider CLI) and the tracker's MCP tools.
+// Provider-specific, substituted at init — see init.md. A pattern must match ONLY creation: a POST
+// to a comments endpoint must never match, because commenting on an existing ticket is exactly the
+// alternative the dedupe rule prefers.
+const TRACKER_CREATE_CMD = new RegExp('{{TRACKER_CREATE_CMD_RE}}');
+const TRACKER_CREATE_TOOLS = new RegExp('{{TRACKER_CREATE_TOOLS_RE}}');
+const STAMP_FILE = () => `${MEM}/telemetry/dedupe-stamps.jsonl`;
+const STAMP_FRESH_MS = 15 * 60 * 1000;
+
+// Deliberately fail-CLOSED, unlike the gh checks: the stamp is a local file this hook's own tooling
+// writes, so "cannot read it" means "the search did not run", not "the environment broke".
+const freshDedupeStamp = () => {
+  try {
+    const lines = fs.readFileSync(STAMP_FILE(), 'utf8').trim().split('\n');
+    const last = JSON.parse(lines[lines.length - 1]);
+    return Date.now() - Date.parse(last.ts) < STAMP_FRESH_MS;
+  } catch { return false; }
+};
+
+// Never let a tooling failure become a false DENY: on any error we allow and stay quiet.
+const gh = (args) => {
+  try {
+    return execFileSync('gh', args, { encoding: 'utf8', timeout: 20000, stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch { return null; }
+};
+
+
 let raw = '';
 process.stdin.on('data', (c) => (raw += c));
 process.stdin.on('end', () => {
@@ -39,7 +95,7 @@ process.stdin.on('end', () => {
 
   const ti = p.tool_input || {};
   const cmd = String(ti.command || '');
-  if (!cmd) process.exit(0);
+  const toolName = String(p.tool_name || '');
 
   // `agent_id` is present ONLY inside a subagent. That is exactly the scope of the foreground rule.
   const inSubagent = Boolean(p.agent_id);
@@ -49,7 +105,8 @@ process.stdin.on('end', () => {
   const bgFlag = ti.run_in_background === true;
   const backgrounded = bgFlag || BACKGROUNDED_IN_CMD.test(cmd);
 
-  const deny = (reason) => {
+  // One ledger for every decision this hook takes — denies AND audited allows. Best-effort.
+  const ledger = (entry) => {
     try {
       fs.mkdirSync(`${MEM}/telemetry`, { recursive: true });
       fs.appendFileSync(`${MEM}/telemetry/guards-${new Date().toISOString().slice(0, 7)}.jsonl`,
@@ -57,12 +114,16 @@ process.stdin.on('end', () => {
           ts: new Date().toISOString(),
           agent_id: p.agent_id ?? null,
           tool_use_id: p.tool_use_id ?? null,
-          rule: reason.rule,
+          tool_name: toolName || null,
           command: cmd.slice(0, 400),
           bg_field_present: Object.prototype.hasOwnProperty.call(ti, 'run_in_background'),
+          ...entry,
         }) + '\n');
     } catch { /* the ledger is best-effort; the DENY is not */ }
+  };
 
+  const deny = (reason) => {
+    ledger({ rule: reason.rule, decision: 'deny' });
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
@@ -72,6 +133,25 @@ process.stdin.on('end', () => {
     }));
     process.exit(0);
   };
+
+  const DEDUPE_TEXT = 'Blocked: you are creating a tracker ticket without having searched for an existing one. '
+    + `Run \`python3 ${MEM}/find-existing-ticket.py "<root-cause term>" [more terms]\` first — give it the `
+    + 'CAUSE (a token name, a function, a file, an error string), never the symptom. If it prints a LIVE '
+    + 'match, comment there instead of filing. If it prints NO MATCH, retry your create within 15 minutes '
+    + 'and it will pass. Five tickets for one root cause is the failure this guard exists to stop.';
+
+  // 4a. Ticket creation through the tracker's MCP tools — these payloads carry no `command`,
+  //     so this branch must run before the empty-command exit below.
+  if (TRACKER_CREATE_TOOLS.test(toolName) && !freshDedupeStamp()) {
+    deny({ rule: 'dedupe-before-filing', text: DEDUPE_TEXT });
+  }
+
+  if (!cmd) process.exit(0);
+
+  // 4b. The same rule for the command route (curl POST / provider CLI).
+  if (TRACKER_CREATE_CMD.test(cmd) && !freshDedupeStamp()) {
+    deny({ rule: 'dedupe-before-filing', text: DEDUPE_TEXT });
+  }
 
   if (inSubagent && backgrounded && GATE.test(cmd)) {
     deny({
@@ -91,6 +171,64 @@ process.stdin.on('end', () => {
         + '"Generated with Claude" line). This project ships no AI attribution in commits or PRs. Rewrite '
         + 'the message without it and commit again.',
     });
+  }
+
+
+  // 3. A PR that touches a UI surface must carry visual evidence before it leaves draft.
+  //    Anchored to the start of a command so the words quoted inside an echo or a commit message
+  //    are not themselves denied.
+  const ready = cmd.match(/(?:^|[;&|]\s*|\n\s*)gh\s+pr\s+ready\b\s*(\d+)?/);
+  if (ready) {
+    const target = ready[1] ? [ready[1]] : [];
+    const raw = gh(['pr', 'view', ...target, '--json', 'body,files,number']);
+    if (raw) {                                   // no data -> allow; never guess
+      let pr; try { pr = JSON.parse(raw); } catch { pr = null; }
+      if (pr && Array.isArray(pr.files)) {
+        const paths = pr.files.map((f) => f.path || '');
+        const body = String(pr.body || '');
+        const touchesUi = paths.some((p) => UI_PATH.test(p) && !NOT_UI.test(p));
+        const committed = paths.filter((p) => MEDIA_EXT.test(p));
+        const namedInBody = MEDIA_EXT.test(body);
+
+        // The escape is allowed but never silent: every use lands in the ledger, so a habit of
+        // escaping is one grep away from being noticed.
+        if (touchesUi && NO_VISUAL_SURFACE.test(body)) {
+          ledger({ rule: 'pr-visual-evidence-escape-used', decision: 'allow', pr: pr.number });
+        }
+
+        if (touchesUi && !NO_VISUAL_SURFACE.test(body)) {
+          const sample = paths.filter((p) => UI_PATH.test(p) && !NOT_UI.test(p)).slice(0, 4);
+          const escape = `\n\nIf this PR genuinely has no visual surface (a type-only or comment-only change to a `
+            + `.tsx/.css file), write the exact words "no visual surface" in the PR body with the reason, then `
+            + `re-run. Do not strip the evidence section to get past this guard.`;
+
+          if (committed.length === 0) {
+            deny({
+              rule: 'pr-visual-evidence-missing',
+              text: `Blocked: PR #${pr.number} changes a UI surface but commits no screenshots. Changed UI files `
+                + `include: ${sample.join(', ')}.\n\nDrive the affected screens in a real browser, capture BEFORE `
+                + `and AFTER for every state you changed, and commit them into this branch under `
+                + `\`${EVIDENCE_DIR}/<ISSUE-KEY>/\`. Then reference them in the PR body with `
+                + `\`gh pr edit --body-file\`, paired before/after per state, plus the design frame beside the `
+                + `implementation where a design exists.${escape}`,
+            });
+          }
+
+          if (!namedInBody) {
+            deny({
+              rule: 'pr-visual-evidence-not-in-body',
+              text: `Blocked: PR #${pr.number} commits ${committed.length} screenshot(s) but its DESCRIPTION never `
+                + `mentions them, so a reviewer opening the PR sees none of it. This is the step that gets forgotten `
+                + `every time, which is why it is now mechanical.\n\nCommitted evidence: `
+                + `${committed.slice(0, 4).join(', ')}${committed.length > 4 ? ', …' : ''}\n\nRun `
+                + `\`gh pr edit ${pr.number} --body-file <file>\` and add an "Evidence" section naming each image, `
+                + `pairing before with after per state, saying what changed in it. A path a reviewer has to go `
+                + `hunting for is not evidence.${escape}`,
+            });
+          }
+        }
+      }
+    }
   }
 
   process.exit(0); // silent allow
