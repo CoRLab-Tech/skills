@@ -27,7 +27,7 @@ metadata:
 
 Implementation effort: balanced-model `medium` by default; `high` only on a money or security surface, or after a failed attempt.
 
-**Read the `strategy:` field on the ticket's `LOOP-PLAN` marker before you pick a gate** — it may already be higher than the ticket's surface suggests. Under `LOOP_STRATEGY=auto` the rung tracks the ticket's assessed complexity, not its failure count. When a gate comes back red, ask whether the defect **revealed a surface you did not know about** (concurrency, auth, cross-tenant, money math, a footprint outside the plan): if so, re-classify and write the new rung into the marker with the reason. If the defect was a typo, a missing test, or a forgotten log line, the ticket is exactly what you thought it was — keep the rung and fix it. Never buy a stronger gate just because you failed once. See [[feedback-loop-strategy-profiles]].
+**Read the `strategy:` field on the ticket's `LOOP-PLAN` marker before you pick a gate** — it may already be higher than the ticket's surface suggests. Under `LOOP_STRATEGY=auto` the rung tracks the ticket's assessed complexity, not its failure count. When a gate comes back red, ask whether the defect **revealed a surface you did not know about** (concurrency, auth, cross-tenant, money math, a footprint outside the plan): if so, re-classify and write the new rung into the marker with the reason. **In EVERY profile — pinned ones included, where the rung itself stays put** — a finding that names a risk surface also flips the marker's `merge:` field to `review` if it was `auto`, and updates the PR's registry entry in the same step: a newly-revealed risk surface revokes the auto merge lane, and the lane never moves back ([[feedback-automerge-risk-lanes]]). If the defect was a typo, a missing test, or a forgotten log line, the ticket is exactly what you thought it was — keep the rung and fix it. Never buy a stronger gate just because you failed once. See [[feedback-loop-strategy-profiles]].
 
 ## MANDATORY FINALIZE
 
@@ -39,7 +39,7 @@ A gate produces review and verdict WRITEUPS. Those are INTERMEDIATE artifacts, n
 (b) Transition the issue → {{REVIEW_STATUS}}.
 (c) Post a comment on the issue: the PR link plus a one-paragraph QA verdict.
 (d) Notify the owner with the ticket and PR links.
-(e) Append `{repo:"{{REPO}}",number:<N>,issue:"{{ISSUE_REF}}"}` to `.pr-feedback-state`. The orchestrator rebuilds this registry authoritatively, so your append is a convenience, not the source of truth ([[feedback-pr-registry-race]]).
+(e) Append `{repo:"{{REPO}}",number:<N>,issue:"{{ISSUE_REF}}",lane:"<auto|review — copied from the ticket's LOOP-PLAN merge: field; absent or unreadable ⇒ review>",gatedHead:"<the SHA the gates passed on>",ownActivity:[<node IDs of every PR comment/review you posted + OIDs of every commit you pushed>]}` to `.pr-feedback-state`. The orchestrator rebuilds this registry authoritatively, so your append is a convenience, not the source of truth ([[feedback-pr-registry-race]]).
 
 Return exactly: `{{ISSUE_REF}}: <IN_REVIEW url | BLOCKED reason>` plus the PR number.
 

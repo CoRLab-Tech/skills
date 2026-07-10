@@ -5,6 +5,9 @@
 # Provider-agnostic by design: it reads GitHub, not the tracker. A PR that is open and NOT a draft is
 # exactly "gates passed, waiting on the owner" (see feedback/draft-until-gated.md), which is the thing
 # worth nagging about. That makes this script identical for Linear / Jira / Plane.
+# Under LOOP_AUTOMERGE=on (feedback/automerge-risk-lanes.md) a lane-auto PR may appear here briefly
+# and then self-merge on the loop's next sweep — the recall concerns review-lane PRs; one that
+# lingers across pings is a stalled sweep worth noticing, not a review to chase.
 #
 # Placeholders substituted at init time:
 #   {{REPOS}}        -> space-separated "owner/repo" list (one entry for single-repo projects)

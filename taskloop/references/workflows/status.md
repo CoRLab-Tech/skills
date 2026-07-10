@@ -18,6 +18,8 @@ Read `$MEM/.env`. Detect the provider:
 - Else if `JIRA_API_TOKEN` is present → provider is `Jira`
 - Else → print `unable to detect provider from .env` and stop
 
+Also read `LOOP_STRATEGY` (default `auto`) and `LOOP_AUTOMERGE` (default `off`) for the summary.
+
 ## Step 2 — Find the running Monitor task
 
 Search the harness's background task list for any task whose `command` starts with `$MEM/monitor.sh`. Record its `task_id` and its `started_at` if available.
@@ -58,6 +60,7 @@ Format the three sections as a single readable block:
 taskloop status — <project name> (<Provider>)
 
 Monitor:    <running task_id since <started_at>>  |  <not running>
+Config:     strategy=<auto|fast|balanced|heavy>  automerge=<on|off>
 Ready queue (N actionable):
   <ID>   <priority>   <updatedAt>   <title>
   ...

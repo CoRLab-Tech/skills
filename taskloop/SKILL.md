@@ -49,9 +49,9 @@ Provider details live in `references/providers/<name>.md`. Read only the one mat
 Per-project, under `~/.claude/projects/<slugified-cwd>/memory/`:
 
 ```
-.env                            # API keys, project IDs, LOOP_STRATEGY, chmod 600
+.env                            # API keys, project IDs, LOOP_STRATEGY, LOOP_AUTOMERGE, chmod 600
 .monitor-state                  # ephemeral, last queue snapshot
-.pr-feedback-state              # PR registry (repo+number+issue, written at gh pr create) + per-PR last-seen feedback timestamps; drives sweep/merge/WIP-cap; survives stop/start
+.pr-feedback-state              # PR registry (repo+number+issue+merge lane+gatedHead+ownActivity, written at gh pr create) + per-PR last-seen feedback timestamps; drives sweep/merge/WIP-cap; survives stop/start
 .queue-plan                     # last LOOP-PLAN triage + queue signature (ids/titles/desc-hashes/human-comment counts — never the loop's own plan comments)
 monitor.sh                      # rendered from provider template
 monitor-prs.sh                  # the loop's own eyes on its PRs (merge/comment/CI deltas)
@@ -86,7 +86,7 @@ feedback/<slug>.md              # universal + project-specific rules
 
 ## Universal feedback rules
 
-38 rules ship as assets. `init` copies them into the project's `memory/feedback/` and links each one from `MEMORY.md`, grouped by when it applies. They are provider-neutral.
+39 rules ship as assets. `init` copies them into the project's `memory/feedback/` and links each one from `MEMORY.md`, grouped by when it applies. They are provider-neutral.
 
 **Prose is the weakest form of enforcement.** Every rule that was empirically ignored in a real run has been converted into a mechanism, and new rules should be too. What is mechanical today:
 
@@ -107,7 +107,7 @@ The rules, by when they apply (see `assets/feedback/`):
 
 **Gating a PR:** `pr-gate-passes` (the four lenses: `/review`, `rigorous`, security, QA agent), `ui-verification-and-evidence`, `cost-conscious-gating`, `targeted-regate-on-fixes`, `ci-failure-triage`
 
-**After the PR is open:** `watch-pr-comments`, `read-media-in-comments`, `merge-on-approval`, `ticket-done-on-merge`, `pr-registry-race`, `reconcile-tracker-vs-github`, `telegram-notify-owner`
+**After the PR is open:** `watch-pr-comments`, `read-media-in-comments`, `merge-on-approval`, `automerge-risk-lanes`, `ticket-done-on-merge`, `pr-registry-race`, `reconcile-tracker-vs-github`, `telegram-notify-owner`
 
 **Cost, routing, learning:** `model-effort-routing`, `token-hygiene`, `continuous-learning`
 

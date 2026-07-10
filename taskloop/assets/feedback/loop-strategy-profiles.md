@@ -26,13 +26,15 @@ The loop's rigor is a **switchable strategy**, so the owner can trade thoroughne
 | Signal | Entry rung |
 |---|---|
 | Default — no signal below fires | `fast` |
-| Touches a money-movement, auth/security, concurrency, or idempotency surface | `balanced` |
+| Touches a money-movement, auth/security (cross-tenant/authz included), concurrency, or idempotency surface | `balanced` |
 | Money *math*, a saga or concurrency core, an auth surface, or a new external adapter | `heavy` |
 | A new service skeleton, or a public contract change | `balanced` |
 | Cross-cutting: touches ≥ 3 services, or a shared component / global CSS / theme token | `balanced` |
 | Mirrors an already-merged sibling pattern | `fast` — the architecture decision is already made ([[feedback-cost-conscious-gating]]) |
 
 When two signals fire, take the higher rung. When genuinely ambiguous, route up — an unnecessary `balanced` gate is cheap next to a missed money bug.
+
+This same classification also decides the ticket's **merge lane** when `LOOP_AUTOMERGE=on` ([[feedback-automerge-risk-lanes]]): no rung-lifting signal fires → `merge: auto` (the sibling-pattern signal, which yields `fast`, lanes auto); any signal that lifts the rung above `fast` → `merge: review`. The lane follows the classification, never the pinned profile — pinned `fast` reduces the gate but its money/auth tickets still merge through a human.
 
 **Step 2 — re-classify when QA hands back new information about the ticket.** A QA `fail`, a confirmed blocking finding, a human change request, a failed attempt, or a red `main` traced to this PR is a **prompt to re-run Step 1 with what you now know** — not an escalation in itself. Ask one question: *does this evidence change what the ticket is?*
 
@@ -100,7 +102,7 @@ Model names below are tiers, not ids: `top` / `deep` / `balanced` / `light` reso
 2. **Green tests + typecheck + lint + build before finalize** ([[feedback-regression-is-blocker]], [[feedback-ci-failure-triage]]) — never ship red, in any profile.
 3. **No AI attribution; PR evidence for UI; PR link on the ticket; tracker state mirrors reality on merge** — process rails, profile-independent.
 
-**Pinned `fast` is PURE: no escalation of any kind.** When the owner sets `LOOP_STRATEGY=fast` explicitly, money-movement, auth, concurrency, and idempotency PRs run fast's reduced gate too — the owner owns that risk by choosing the profile. The only lift is a manual per-ticket `strategy:` override. Rails 1–3 still hold: "pure" drops the *gate rigor*, not those three.
+**Pinned `fast` is PURE: no escalation of any kind.** When the owner sets `LOOP_STRATEGY=fast` explicitly, money-movement, auth, concurrency, and idempotency PRs run fast's reduced gate too — the owner owns that risk by choosing the profile. The only lift is a manual per-ticket `strategy:` override. Rails 1–3 still hold: "pure" drops the *gate rigor*, not those three. And purity never extends to the merge lane: under `LOOP_AUTOMERGE=on`, a gate finding that reveals a risk surface still flips the ticket's `merge:` to `review` even though the rung stays pinned ([[feedback-automerge-risk-lanes]]) — the pin buys a cheaper gate, not lane immunity.
 
 **This is exactly what `auto` changes.** `auto` also lands most tickets on `fast`, but it is not pure: it lifts the risky classes to `balanced` or `heavy` up front, and it re-reads the classification when QA proves the ticket was misread. Choose pinned `fast` when you want speed and accept the risk; choose `auto` when you want speed *except* where the code says otherwise. `auto` is the default because on most codebases the risky classes are a small minority of tickets, so it buys `fast`'s wall-clock on the majority while never letting a money path through a light gate.
 

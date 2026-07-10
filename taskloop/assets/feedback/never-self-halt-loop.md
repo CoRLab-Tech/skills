@@ -35,6 +35,6 @@ metadata:
 
 **The loop is an independent instrument.** It must NEVER depend on the owner announcing anything in chat — "merged", "commented", "CI is red". Two persistent monitors are its senses: the tracker's ready-queue poller (`monitor.sh`) and the PR watcher (`monitor-prs.sh`, polling every registered PR for state, comment, review and CI deltas). This rule exists because it happened: the owner had to say "merged" twice before the loop reacted.
 
-- On a **MERGED** event: move the issue to the Merged state ([[feedback-ticket-done-on-merge]]), drop the PR from the registry, verify the head branch was auto-deleted, then IMMEDIATELY pull the next ready task — no pause, no ping.
+- On a **MERGED** event: move the issue to the Merged state ([[feedback-ticket-done-on-merge]]), drop the PR from the registry, verify the head branch was auto-deleted, then IMMEDIATELY pull the next ready task — no pause, no ping. One exception: a merge the loop itself performed through the auto lane sends the **Auto-merged** ping ([[feedback-automerge-risk-lanes]], [[feedback-telegram-notify-owner]]) — that is audit trail, not routine progress — then pulls the next task just the same.
 - On a **comment / review / CI** event: service it before new work ([[feedback-watch-pr-comments]], [[feedback-regression-is-blocker]]).
 - All status the owner needs goes INTO the PR (body, comments, evidence) and the tracker issue (comments, state transitions). Chat is not a channel the loop relies on — only `start` and `stop` arrive that way.

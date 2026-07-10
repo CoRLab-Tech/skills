@@ -57,10 +57,11 @@ These do not depend on anything below being read. They hold whether or not the l
 - [Watch PR comments](feedback/watch-pr-comments.md) — review feedback outranks new tasks
 - [Read media in comments](feedback/read-media-in-comments.md) — actually view attached images (Read) and videos (ffmpeg frame extraction)
 - [Merge on approval](feedback/merge-on-approval.md) — approved + green CI + no unresolved threads → the loop merges its own PR
+- [Automerge risk lanes](feedback/automerge-risk-lanes.md) — `LOOP_AUTOMERGE` (on/off): a gated no-risk PR untouched by any human merges without waiting for review; any risk signal or human touch ratchets it to the review lane, never back
 - [Ticket done on merge](feedback/ticket-done-on-merge.md) — merged PR → issue moves to "Merged"; never claim the owner's Ready-for-QA / Deployed / Done
 - [PR registry race](feedback/pr-registry-race.md) — the orchestrator owns `.pr-feedback-state` and rebuilds it from `gh pr list`
 - [Reconcile tracker vs GitHub](feedback/reconcile-tracker-vs-github.md) — the PR watcher is edge-triggered; a periodic level-triggered reconcile repairs what it missed
-- [Telegram pings to the owner](feedback/telegram-notify-owner.md) — blocked / review-ready (all PR links) / one idle ping
+- [Telegram pings to the owner](feedback/telegram-notify-owner.md) — blocked / review-ready (all PR links) / auto-merged / one idle ping
 
 ## Cost, routing, and learning
 
