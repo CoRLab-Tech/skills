@@ -26,7 +26,7 @@ runs mid-flight, preserves all live state, and never pauses the loop.
 ## Step 0 — Resolve dirs; confirm the loop is alive
 
 ```bash
-SLUG=$(pwd | sed 's|/|-|g')
+SLUG=$(pwd | sed 's|[^A-Za-z0-9]|-|g')   # the harness maps EVERY non-alphanumeric to '-', not just '/'
 MEM="$HOME/.claude/projects/${SLUG}/memory"
 ```
 

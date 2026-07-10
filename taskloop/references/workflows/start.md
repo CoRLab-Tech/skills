@@ -13,12 +13,12 @@ If any is missing, fall back to `init` workflow instead.
 ## Step 1 — Reset the monitor state
 
 ```bash
-SLUG=$(pwd | sed 's|/|-|g')
+SLUG=$(pwd | sed 's|[^A-Za-z0-9]|-|g')   # the harness maps EVERY non-alphanumeric to '-', not just '/'
 MEM="$HOME/.claude/projects/${SLUG}/memory"
-rm -f "$MEM/.monitor-state" "$MEM/.pr-monitor-state"
+rm -f "$MEM/.monitor-state" "$MEM/.pr-monitor-state" "$MEM/.owner-stop"
 ```
 
-Removing the state file forces the first tick to re-emit the current actionable queue, so Claude sees what's pending immediately.
+Removing the state file forces the first tick to re-emit the current actionable queue, so Claude sees what's pending immediately. Removing `.owner-stop` re-enables the loop's wakeups — that marker is what lets `hook-loop-guards` distinguish an owner-ordered stop from the loop self-halting (guard 5).
 
 ## Step 1b — Arm the telemetry (append-only spend record)
 
@@ -72,12 +72,19 @@ Call the harness's `Monitor` tool TWICE:
 
 The PR watcher polls every PR in `.pr-feedback-state` via `gh` and emits a line the moment a PR is **MERGED** (→ move the issue to the Merged state, clean the registry, pull the next task), **CLOSED**, or changes comments/reviews/CI. Save both `task_id`s.
 
+3. **Level-triggered reconcile** — when `$MEM/reconcile-merged.sh` exists (Plane, GitHub):
+   - `command`: `$MEM/reconcile-merged.sh`
+   - `description`: e.g. `<project name> merged-ticket reconcile (level-triggered)`
+   - `persistent`: `true`, `timeout_ms`: `3600000`
+
+   Without this, the reconcile script exists but nothing ever runs it — the `reconcile-tracker-vs-github` guarantee would be prose wearing a mechanism's name. Save its `task_id` too.
+
 ## Step 4 — Arm the ScheduleWakeup safety net
 
 Call `ScheduleWakeup`:
 
-- `delaySeconds`: `300` (5 min fallback heartbeat — Monitor is the primary wake signal; this only fires if no event arrives)
-- `reason`: short one-liner like `"Monitor primary wake; 5-min safety heartbeat"`
+- `delaySeconds`: `1500` (25 min fallback heartbeat, the canonical cadence from `restart-instructions.md` — Monitor is the primary wake signal; this only fires if no event arrives, so a short interval buys nothing but cache misses)
+- `reason`: short one-liner like `"Monitor primary wake; 25-min safety heartbeat"`
 - `prompt`: the literal `/loop` invocation from `$MEM/restart-instructions.md` (verbatim, including the leading `/loop ` prefix). This re-enters the `loop` skill which then reads `autonomous-loop.md` and runs one iteration.
 
 ## Step 5 — Confirm
@@ -88,4 +95,4 @@ Print a one-line confirmation referencing the monitor task_id and the wakeup tar
 
 If `start` is invoked while a previous Monitor is still running for this project, stop the old one first (`TaskStop <old_task_id>`) so we don't have duplicate pollers spamming events.
 
-To find the old task id: search session task list for any task whose command starts with `$MEM/monitor.sh`.
+To find the old task ids: search the session task list for any task whose command starts with `$MEM/monitor.sh`, `$MEM/monitor-prs.sh`, or `$MEM/reconcile-merged.sh` — all three are loop-owned and each must be a single instance.

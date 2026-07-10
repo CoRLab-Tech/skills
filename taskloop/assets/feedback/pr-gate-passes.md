@@ -44,7 +44,7 @@ After the technical gates pass, spawn a dedicated QA agent whose only job is to 
 
 ## Publish the gate's evidence, not just its conclusion
 
-When the gate produced any finding, render a single self-contained HTML page — dimensions reviewed, every finding with its file, line and quoted source, each verifier's verdict and reason, the final QA and security verdicts — commit it into the PR branch under `docs/evidence/`, and link it from the PR body.
+When the gate produced any finding, render a single self-contained HTML page — dimensions reviewed, every finding with its file, line and quoted source, each verifier's verdict and reason, the final QA and security verdicts — commit it into the PR branch under the project's evidence directory (set at init, default `docs/evidence`), and link it from the PR body.
 
 Render it with one light-model agent from the gate's structured result, which the orchestrator already holds: no re-reading of the diff, no extra review pass. Skip it entirely when the gate found nothing — an empty dashboard is noise.
 

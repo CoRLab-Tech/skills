@@ -5,7 +5,7 @@ Print a quick diagnostic for the current project's taskloop. Read-only — no st
 ## Step 1 — Resolve memory dir and detect provider
 
 ```bash
-SLUG=$(pwd | sed 's|/|-|g')
+SLUG=$(pwd | sed 's|[^A-Za-z0-9]|-|g')   # the harness maps EVERY non-alphanumeric to '-', not just '/'
 MEM="$HOME/.claude/projects/${SLUG}/memory"
 ```
 
@@ -42,6 +42,10 @@ Use the REST curl from `references/providers/plane.md` ("Verify ready queue" rec
 ### Jira
 
 Use the REST search from `references/providers/jira.md` ("Verify Ready queue" recipe). Parse `issues[]`.
+
+### GitHub Issues
+
+Use the "Verify queue" recipe from `references/providers/github.md` (`gh issue list --repo "$GITHUB_REPO" --label "$READY_LABEL" --state open --json number,title,updatedAt`). Parse the JSON array.
 
 Pretty-print the first 5 entries as a table with columns: `id`, `priority`, `updatedAt`, `title`.
 

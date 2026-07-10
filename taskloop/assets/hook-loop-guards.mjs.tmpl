@@ -19,6 +19,14 @@
 //      step is prose. DENY creating a tracker ticket unless the project's find-existing-ticket
 //      script ran within the last 15 minutes — the script stamps telemetry/dedupe-stamps.jsonl
 //      on every run. Search first, file second, mechanically.
+//   5. never-self-halt-loop — the loop once stopped its own heartbeat because the board looked
+//      idle, then sat blind for hours. DENY `ScheduleWakeup stop:true` unless `/taskloop stop`
+//      left the $MEM/.owner-stop marker — stopping is the owner's decision, mechanically.
+//   6. merge-safety — the worst failure in the system is unreviewed commits landing on main, and
+//      the conditions were prose. DENY `gh pr merge` when the PR is a draft, has failing checks,
+//      or has neither an APPROVED review nor a registry lane of `auto` (automerge-risk-lanes).
+//      Mechanical floor only: approval-covers-head and zero-human-touch remain the model's
+//      re-checks per the merge rules. Fail-open on tooling errors, like the other gh checks.
 //
 // Denial feeds `permissionDecisionReason` back to the model, which reads it and retries. This is why
 // the reasons below are written as instructions, not scoldings.
@@ -32,8 +40,8 @@
 //                                 use (?!) when the provider has no MCP tools
 //
 // Install as a SECOND PreToolUse matcher, alongside the routing hook. The matcher must ALSO name the
-// tracker's MCP create tools, or rule 4 never sees them:
-//   { "matcher": "Bash|<mcp create tool names>", "hooks": [{ "type": "command", "command": "node <MEM>/hook-loop-guards.mjs" }] }
+// tracker's MCP create tools (or rule 4 never sees them) and ScheduleWakeup (or rule 5 never fires):
+//   { "matcher": "Bash|ScheduleWakeup|<mcp create tool names>", "hooks": [{ "type": "command", "command": "node <MEM>/hook-loop-guards.mjs" }] }
 // Matchers are regex over the tool name; multiple matcher groups all run, and the most restrictive
 // decision wins — so this hook and hook-agent-routing.mjs never conflict.
 
@@ -43,7 +51,10 @@ import { execFileSync } from 'node:child_process';
 const MEM = '{{MEM}}';
 
 // A "gate" is the thing whose result the turn depends on. Backgrounding one is what kills a run.
-const GATE = /\b(npm|pnpm|yarn|npx|nx|jest|vitest|pytest|go test|cargo test|mvn|gradle)\b.*\b(test|build|lint|typecheck|tsc)\b|\btsc\b|\beslint\b|\bdocker\s+compose\s+up\b/i;
+// Two shapes: bare runners that ARE the gate by themselves (`pytest`, `go test ./...`, `vitest run`),
+// and package managers that need a verb (`pnpm test`, `yarn build`). The first shape was originally
+// folded into the second and silently matched nothing — verify both shapes in the init pipe-tests.
+const GATE = /\b(jest|vitest|pytest|tsc|eslint)\b|\bgo\s+test\b|\bcargo\s+test\b|\b(npm|pnpm|yarn|npx|nx|mvn|gradle)\b.*\b(test|build|lint|typecheck|tsc)\b|\bdocker\s+compose\s+up\b/i;
 // Backgrounding expressed in the command itself, which is visible regardless of the tool schema.
 const BACKGROUNDED_IN_CMD = /(^|\s)nohup\s|&\s*$|&\s*(#.*)?$|\bdisown\b|\bsetsid\b/;
 const ATTRIBUTION = /Co-Authored-By:\s*Claude|Generated with \[?Claude|🤖 Generated with|Co-authored-by:\s*Claude/i;
@@ -146,6 +157,26 @@ process.stdin.on('end', () => {
     deny({ rule: 'dedupe-before-filing', text: DEDUPE_TEXT });
   }
 
+  // 5. never-self-halt-loop, mechanized: the loop once called ScheduleWakeup stop:true because the
+  //    board looked idle, killed its own heartbeat, and sat blind for hours. Stopping is OWNER-only:
+  //    `/taskloop stop` touches $MEM/.owner-stop before tearing down (start removes it). Without that
+  //    marker, a stop:true is the loop self-halting — denied. Fail-closed: an unreadable marker means
+  //    "the owner did not stop", which errs toward the loop staying alive, exactly the rule's intent.
+  if (toolName === 'ScheduleWakeup' && ti.stop === true) {
+    let ownerStopped = false;
+    try { fs.statSync(`${MEM}/.owner-stop`); ownerStopped = true; } catch { /* no marker */ }
+    if (!ownerStopped) {
+      deny({
+        rule: 'never-self-halt-loop',
+        text: 'Blocked: you are stopping the loop\'s wakeups on your own judgment. Idle is a normal '
+          + 'state, not a terminal one — re-arm the heartbeat and re-sweep instead. Only the owner halts '
+          + 'the loop: if the owner typed "stop", run /taskloop stop (it records the owner\'s decision '
+          + 'and tears down the monitors); never ScheduleWakeup stop:true directly.',
+      });
+    }
+    ledger({ rule: 'never-self-halt-loop', decision: 'allow-owner-stop' });
+  }
+
   if (!cmd) process.exit(0);
 
   // 4b. The same rule for the command route (curl POST / provider CLI).
@@ -164,23 +195,37 @@ process.stdin.on('end', () => {
     });
   }
 
-  if (/\bgit\s+commit\b/.test(cmd) && ATTRIBUTION.test(cmd)) {
+  if (/\b(git\s+commit|gh\s+pr\s+(create|edit))\b/.test(cmd) && ATTRIBUTION.test(cmd)) {
     deny({
       rule: 'no-ai-attribution',
-      text: 'Blocked: this commit message carries AI attribution (a Co-Authored-By: Claude trailer or a '
-        + '"Generated with Claude" line). This project ships no AI attribution in commits or PRs. Rewrite '
-        + 'the message without it and commit again.',
+      text: 'Blocked: this commit message or PR body carries AI attribution (a Co-Authored-By: Claude '
+        + 'trailer or a "Generated with Claude" line). This project ships no AI attribution in commits or '
+        + 'PRs. Rewrite the text without it and retry. (`--body-file`/`-F` contents are a documented blind '
+        + 'spot — do not use them to smuggle attribution past this guard.)',
     });
   }
 
 
   // 3. A PR that touches a UI surface must carry visual evidence before it leaves draft.
   //    Anchored to the start of a command so the words quoted inside an echo or a commit message
-  //    are not themselves denied.
-  const ready = cmd.match(/(?:^|[;&|]\s*|\n\s*)gh\s+pr\s+ready\b\s*(\d+)?/);
+  //    are not themselves denied. The target must be parsed FULLY — number, URL, or branch, plus a
+  //    --repo/-R flag — and passed through to `gh pr view`; inspecting the cwd's current-branch PR
+  //    while the agent flips a DIFFERENT one (multi-repo projects) is both a false allow and a
+  //    false deny. When the target cannot be resolved unambiguously, ALLOW — never guess.
+  const ready = cmd.match(/(?:^|[;&|]\s*|\n\s*)gh\s+pr\s+ready\b([^;&|\n]*)/);
   if (ready) {
-    const target = ready[1] ? [ready[1]] : [];
-    const raw = gh(['pr', 'view', ...target, '--json', 'body,files,number']);
+    const tail = String(ready[1] || '');
+    const repoM = tail.match(/(?:--repo|-R)(?:[=\s]+)("[^"]+"|'[^']+'|[^\s"']+)/);
+    const repo = repoM ? repoM[1].replace(/^["']|["']$/g, '') : null;
+    const sel = tail.replace(/(?:--repo|-R)(?:[=\s]+)("[^"]+"|'[^']+'|[^\s"']+)/, ' ')
+      .trim().split(/\s+/).filter((t) => t && !t.startsWith('-'))[0] || null;
+    let target = null;
+    if (sel && /^https?:\/\//.test(sel)) target = [sel];          // URL selects repo AND pr by itself
+    else if (sel && repo) target = [sel, '--repo', repo];
+    else if (sel) target = [sel];                                  // number/branch in the cwd repo
+    else if (!repo) target = [];                                   // bare `gh pr ready`: current branch
+    // sel absent but --repo present: gh itself errors ("argument required with --repo") — allow, no guess.
+    const raw = target === null ? null : gh(['pr', 'view', ...target, '--json', 'body,files,number']);
     if (raw) {                                   // no data -> allow; never guess
       let pr; try { pr = JSON.parse(raw); } catch { pr = null; }
       if (pr && Array.isArray(pr.files)) {
@@ -226,6 +271,68 @@ process.stdin.on('end', () => {
                 + `hunting for is not evidence.${escape}`,
             });
           }
+        }
+      }
+    }
+  }
+
+  // 6. Merge safety, the mechanical floor. Same target parsing as guard 3; same fail-open stance.
+  const mergeM = cmd.match(/(?:^|[;&|]\s*|\n\s*)gh\s+pr\s+merge\b([^;&|\n]*)/);
+  if (mergeM) {
+    const tail = String(mergeM[1] || '');
+    const repoM = tail.match(/(?:--repo|-R)(?:[=\s]+)("[^"]+"|'[^']+'|[^\s"']+)/);
+    const repo = repoM ? repoM[1].replace(/^["']|["']$/g, '') : null;
+    const sel = tail.replace(/(?:--repo|-R)(?:[=\s]+)("[^"]+"|'[^']+'|[^\s"']+)/, ' ')
+      .trim().split(/\s+/).filter((t) => t && !t.startsWith('-'))[0] || null;
+    let target = null;
+    if (sel && /^https?:\/\//.test(sel)) target = [sel];
+    else if (sel && repo) target = [sel, '--repo', repo];
+    else if (sel) target = [sel];
+    else if (!repo) target = [];
+    const rawPr = target === null ? null
+      : gh(['pr', 'view', ...target, '--json', 'number,isDraft,reviewDecision,statusCheckRollup,headRefName']);
+    if (rawPr) {
+      let pr; try { pr = JSON.parse(rawPr); } catch { pr = null; }
+      if (pr) {
+        if (pr.isDraft === true) {
+          deny({
+            rule: 'merge-safety-draft',
+            text: `Blocked: PR #${pr.number} is a DRAFT — its gates never finished (draft-until-gated). `
+              + 'Finish the gates, flip it ready, and merge through the sweep.',
+          });
+        }
+        const checks = Array.isArray(pr.statusCheckRollup) ? pr.statusCheckRollup : [];
+        const bad = checks.filter((c) => {
+          const s = String(c.conclusion || c.state || '').toUpperCase();
+          return s && !['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(s);
+        });
+        if (bad.length > 0) {
+          deny({
+            rule: 'merge-safety-checks',
+            text: `Blocked: PR #${pr.number} has ${bad.length} non-green check(s) `
+              + `(${bad.slice(0, 3).map((c) => c.name || c.context || '?').join(', ')}). A red or pending `
+              + 'check blocks the merge (regression-is-blocker). Wait for green or triage the failure first.',
+          });
+        }
+        if (String(pr.reviewDecision || '') !== 'APPROVED') {
+          // The auto lane (automerge-risk-lanes) is the one sanctioned approval-less path: the
+          // registry entry must carry lane "auto". Anything else needs a human approval.
+          let laneAuto = false;
+          try {
+            const reg = JSON.parse(fs.readFileSync(`${MEM}/.pr-feedback-state`, 'utf8'));
+            const entries = Array.isArray(reg) ? (reg[0] && reg[0].prs) || [] : (reg && reg.prs) || [];
+            laneAuto = entries.some((e) => e && Number(e.number) === Number(pr.number) && e.lane === 'auto');
+          } catch { /* unreadable registry -> not auto */ }
+          if (!laneAuto) {
+            deny({
+              rule: 'merge-safety-approval',
+              text: `Blocked: PR #${pr.number} has no APPROVED review and its registry lane is not `
+                + '"auto". Merging needs a human approval (merge-on-approval) or an auto-lane ticket '
+                + 'under LOOP_AUTOMERGE=on (automerge-risk-lanes). If a human just approved, re-run '
+                + 'after the review lands.',
+            });
+          }
+          ledger({ rule: 'merge-safety-auto-lane', decision: 'allow', pr: pr.number });
         }
       }
     }

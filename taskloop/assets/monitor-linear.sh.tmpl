@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Linear ready-queue poller for taskloop.
-# Emits one stdout block per change in the Todo queue so the harness's
+# Emits one stdout block per change in the ready queue so the harness's
 # Monitor tool wakes Claude on every delta.
 #
 # Placeholders substituted at init time:
@@ -14,6 +14,9 @@ set -o pipefail
 ENV_FILE="{{ENV_FILE}}"
 STATE_FILE="{{STATE_FILE}}"
 INTERVAL="${INTERVAL:-60}"
+# The whole ready queue must be visible: queue-triage-plan computes order/group/depends-on across ALL
+# ready tickets, so a silent truncation would corrupt the plan. Warn loudly if we ever hit the cap.
+LIMIT="${LIMIT:-200}"
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "[monitor] error: env file not found at $ENV_FILE" >&2
@@ -26,14 +29,20 @@ while true; do
   # shellcheck disable=SC1090
   . "$ENV_FILE"
   set +a
+  # The ready status is configurable, never hardcoded (adding-a-provider checklist).
+  : "${LINEAR_READY_STATUS:=Todo}"
 
   if [ -z "${LINEAR_API_KEY:-}" ] || [ -z "${LINEAR_PROJECT_ID:-}" ]; then
-    echo "[monitor] error: LINEAR_API_KEY or LINEAR_PROJECT_ID missing in $ENV_FILE"
-    sleep "$INTERVAL"
-    continue
+    # Once per failure episode, not once per tick — a 60s spam loop is worse than the outage.
+    if [ ! -f "$STATE_FILE.envfail" ]; then
+      echo "[monitor] error: LINEAR_API_KEY or LINEAR_PROJECT_ID missing in $ENV_FILE"
+      : > "$STATE_FILE.envfail"
+    fi
+    sleep "$INTERVAL"; continue
   fi
+  rm -f "$STATE_FILE.envfail"
 
-  QUERY="query{project(id:\"$LINEAR_PROJECT_ID\"){issues(first:25,filter:{state:{name:{eq:\"Todo\"}}},orderBy:updatedAt){nodes{identifier title state{name} priority updatedAt}}}}"
+  QUERY="query{project(id:\"$LINEAR_PROJECT_ID\"){issues(first:$LIMIT,filter:{state:{name:{eq:\"$LINEAR_READY_STATUS\"}}},orderBy:updatedAt){nodes{identifier title state{name} priority updatedAt}}}}"
   PAYLOAD=$(printf '{"query":"%s"}' "$QUERY")
 
   RESPONSE=$(curl -sS -X POST https://api.linear.app/graphql \
@@ -42,31 +51,59 @@ while true; do
     --max-time 30 \
     -d "$PAYLOAD" 2>/dev/null || true)
 
-  if [ -z "$RESPONSE" ]; then
-    sleep "$INTERVAL"
-    continue
-  fi
-
-  # Build a stable signature: sorted "id|status|updatedAt" lines.
-  SIG=$(printf '%s' "$RESPONSE" \
-    | python3 -c '
+  # An auth failure and an empty queue MUST NOT look the same. Linear answers a bad key with an
+  # `errors` array (and no data.project), and a genuinely empty queue with `nodes: []`. Conflating
+  # them lets a dead token masquerade as "no work to do" — forever, silently. Parse the difference
+  # and alarm ONCE per failure episode; the marker clears on the first success.
+  VERDICT=$(printf '%s' "$RESPONSE" | python3 -c '
 import json, sys
 try:
     data = json.load(sys.stdin)
+except Exception:
+    print("FAIL|unreadable or empty response"); sys.exit(0)
+if isinstance(data, dict) and data.get("errors"):
+    msg = str(data["errors"][0].get("message", "unknown error"))[:120]
+    print(f"FAIL|{msg}"); sys.exit(0)
+try:
     nodes = data["data"]["project"]["issues"]["nodes"]
 except Exception:
-    sys.exit(0)
+    print("FAIL|no data.project in response (bad project id?)"); sys.exit(0)
+print("OK")
+# NB: no backslash-escaped quotes inside f-string expressions — SyntaxError on python < 3.12
+# (the exact gotcha documented in feedback/pr-registry-race.md).
 for n in nodes:
-    print(f"{n[\"identifier\"]}|{n[\"state\"][\"name\"]}|{n[\"updatedAt\"]}|{n[\"title\"]}")
-' 2>/dev/null | sort || true)
+    ident = n.get("identifier", "")
+    st = (n.get("state") or {}).get("name", "")
+    upd = n.get("updatedAt", "")
+    ttl = n.get("title", "")
+    print(f"{ident}|{st}|{upd}|{ttl}")
+' 2>/dev/null || printf 'FAIL|parser error')
+
+  case "$VERDICT" in
+    FAIL\|*)
+      if [ ! -f "$STATE_FILE.authfail" ]; then
+        echo "[monitor] error: Linear query failed — ${VERDICT#FAIL|}"
+        echo "[monitor] the ready queue is UNKNOWN, not empty. Check LINEAR_API_KEY / project id."
+        : > "$STATE_FILE.authfail"
+      fi
+      sleep "$INTERVAL"; continue
+      ;;
+  esac
+  rm -f "$STATE_FILE.authfail"
+
+  SIG=$(printf '%s' "$VERDICT" | tail -n +2 | sort)
+  COUNT=$(printf '%s' "$SIG" | grep -c . || true)
+  if [ "$COUNT" -ge "$LIMIT" ]; then
+    echo "[monitor] warning: ready queue hit the ${LIMIT}-issue cap — the triage plan may be incomplete. Raise LIMIT."
+  fi
 
   PREV=""
   if [ -f "$STATE_FILE" ]; then
     PREV=$(cat "$STATE_FILE")
   fi
 
-  if [ "$SIG" != "$PREV" ]; then
-    COUNT=$(printf '%s' "$SIG" | grep -c . || true)
+  # `[ -n "$SIG$PREV" ]` keeps a first run against an empty queue silent — there is no delta to report.
+  if [ "$SIG" != "$PREV" ] && [ -n "$SIG$PREV" ]; then
     echo "[monitor] queue changed: ${COUNT} actionable issue(s)"
     printf '%s\n' "$SIG" | head -n 5 | while IFS='|' read -r ID STATUS UPDATED TITLE; do
       [ -z "$ID" ] && continue

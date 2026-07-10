@@ -10,8 +10,8 @@
 These do not depend on anything below being read. They hold whether or not the loop remembers a rule.
 
 - `hook-agent-routing.mjs` — a `PreToolUse` hook: under-modeled `[LOOP-AGENT]` spawns are upgraded in place, and every spawn is appended to `telemetry/spawns-*.jsonl`
-- `hook-loop-guards.mjs` — a `PreToolUse` hook: denies a backgrounded gate command, and denies a commit carrying AI attribution
-- `monitor.sh` / `monitor-prs.sh` — the loop's senses; merges, comments and CI deltas arrive as events, not as chat
+- `hook-loop-guards.mjs` — a `PreToolUse` hook: denies a backgrounded gate command, AI attribution in commits or PR bodies, an evidence-less UI `gh pr ready`, undeduped ticket filing, a self-issued `ScheduleWakeup stop:true`, and a `gh pr merge` of a draft / red-check / unapproved-non-auto-lane PR
+- `monitor.sh` / `monitor-prs.sh` / `reconcile-merged.sh` — the loop's senses (all armed at `start`); merges, comments and CI deltas arrive as events, not as chat, and the tracker is level-trigger repaired
 - `targeted-regate.mjs` — a finding without a verbatim `quote` cannot exist: the schema requires it
 - GitHub itself — a draft PR cannot be merged
 

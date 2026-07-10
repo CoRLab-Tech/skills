@@ -44,12 +44,15 @@ reconcile_once() {
   [ -z "$nums" ] && return 0
 
   for N in $nums; do
-    local labels
-    labels=$(gh issue view "$N" --repo "$GITHUB_REPO" --json state,labels \
-               -q 'select(.state=="OPEN") | .labels[].name' 2>/dev/null) || continue
-    # Closed already (the owner accepted it), or we have been here before: nothing to do.
+    # State and labels are separate questions: an OPEN issue with zero labels is still ours to
+    # label — conflating "no labels" with "closed" skipped such issues forever.
+    local view state labels
+    view=$(gh issue view "$N" --repo "$GITHUB_REPO" --json state,labels 2>/dev/null) || continue
+    state=$(printf '%s' "$view" | jq -r '.state')
+    [ "$state" = "OPEN" ] || continue   # closed already (the owner accepted it): nothing to do
+    labels=$(printf '%s' "$view" | jq -r '.labels[].name')
+    # Been here before: nothing to do.
     printf '%s\n' "$labels" | grep -qx "$MERGED_LABEL" && continue
-    [ -z "$labels" ] && continue   # `select` filtered it out => the issue is CLOSED
 
     gh issue edit "$N" --repo "$GITHUB_REPO" \
       --add-label "$MERGED_LABEL" --remove-label "$IN_REVIEW_LABEL" >/dev/null 2>&1 \

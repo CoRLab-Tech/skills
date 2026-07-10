@@ -95,9 +95,9 @@ feedback/<slug>.md              # universal + project-specific rules
 | Mechanism | Enforces |
 |---|---|
 | `hook-agent-routing.mjs` (PreToolUse on `Task\|Agent`) | the model/effort ladder; also writes the append-only spawn ledger |
-| `hook-loop-guards.mjs` (PreToolUse on `Bash`) | `gates-run-foreground` and `no-ai-attribution` — both denied, not merely discouraged |
+| `hook-loop-guards.mjs` (PreToolUse on `Bash\|ScheduleWakeup`) | `gates-run-foreground`, `no-ai-attribution` (commits AND PR bodies), `pr-visual-evidence`, `dedupe-before-filing`, `never-self-halt-loop` (a self-issued `stop:true` is denied), and the merge-safety floor (a draft, red-check, or unapproved-non-auto-lane `gh pr merge` is denied) |
 | `targeted-regate.mjs` schema | a review finding without a verbatim `quote` cannot exist |
-| `monitor-prs.sh` / `reconcile-merged.sh` | merge, comment and CI events arrive as signals, not as chat |
+| `monitor-prs.sh` / `reconcile-merged.sh` (both armed as Monitors at `start`) | merge, comment and CI events arrive as signals, not as chat; the reconcile is level-triggered repair, actually scheduled |
 | `usage-rollup.mjs` | the spend record; the loop cannot forget to write it |
 | GitHub | a draft PR cannot be merged |
 

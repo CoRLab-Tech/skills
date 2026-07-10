@@ -22,7 +22,9 @@ HTTP basic with `email:token`, base64-encoded:
 
 ```bash
 set -a; . "$MEM/.env"; set +a
-AUTH=$(printf '%s' "$JIRA_EMAIL:$JIRA_API_TOKEN" | base64)
+# NB: GNU base64 line-wraps at 76 chars and today's Atlassian tokens are ~190 chars — the wrapped
+# header silently 401s. Prefer curl's -u form; if you must build the header, disable wrapping:
+AUTH=$(printf '%s' "$JIRA_EMAIL:$JIRA_API_TOKEN" | base64 | tr -d '\n')
 curl -sS -H "Authorization: Basic $AUTH" -H "Accept: application/json" ...
 ```
 
@@ -35,13 +37,13 @@ Used at `init`, `start`, and `status`:
 ```bash
 JQL="project=$JIRA_PROJECT_KEY AND status=\"$JIRA_READY_STATUS\""
 curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-  -G "https://$JIRA_HOST/rest/api/3/search" \
+  -G "https://$JIRA_HOST/rest/api/3/search/jql" \
   --data-urlencode "jql=$JQL" \
   --data-urlencode "fields=summary,status,priority,updated" \
   --data-urlencode "maxResults=10"
 ```
 
-A 200 with an `issues[]` array (possibly empty) means auth + project key + status name are valid. A 401 means email/token wrong; a 400 with `errorMessages` usually means the status name doesn't exist verbatim.
+A 200 with an `issues[]` array (possibly empty) means auth + project key + status name are valid. (`/rest/api/3/search` — without `/jql` — was removed by Atlassian in 2025; a 410 there is the old endpoint, not a config error. Pagination on `/search/jql` uses `nextPageToken`, not `startAt`.) A 401 means email/token wrong; a 400 with `errorMessages` usually means the status name doesn't exist verbatim.
 
 ## Get-issue recipe
 
@@ -90,6 +92,7 @@ Supported targets used by the loop:
 |---|---|
 | `in_progress` | hardcoded `In Progress` (override if your workflow differs) |
 | `in_review` | `$JIRA_REVIEW_STATUS` |
+| `blocked` | hardcoded `Blocked` (override if your workflow differs) — the landing state for timeboxed/unactionable tickets (`status-mirrors-work`, `fail-gracefully-timebox`); verify at init that a transition to it exists from the working statuses, and create/choose one if not |
 | `done` | hardcoded `Done` |
 
 ## Post-comment recipe

@@ -12,7 +12,7 @@ One-time per-project setup. Generates the memory directory, config files, monito
 ## Step 1 — Compute the project memory directory
 
 ```bash
-SLUG=$(pwd | sed 's|/|-|g')
+SLUG=$(pwd | sed 's|[^A-Za-z0-9]|-|g')   # the harness maps EVERY non-alphanumeric to '-', not just '/'
 MEM="$HOME/.claude/projects/${SLUG}/memory"
 ```
 
@@ -44,6 +44,8 @@ Read `references/providers/linear.md`. Then ask `AskUserQuestion` for:
 3. **Linear team name** — exact team name (needed for issue status enumeration).
 
 Verify the API key and project ID by hitting the `issues(first:1, filter:{state:{name:{eq:"Todo"}}})` query and ensuring it returns 200. If it 401s, the key is wrong — ask again.
+
+Then enumerate the team's states and confirm a **Blocked** state exists — the status-mirrors-work rule requires it as the landing state for timeboxed/unactionable tickets. Stock Linear workflows lack it: offer to create it (`workflowStateCreate`, type `backlog`, color `#EF4444`) or map to an existing equivalent the user names. Cache its UUID together with In Progress / Ready for Review.
 
 ### Plane path
 
@@ -87,6 +89,8 @@ Read `references/providers/jira.md`. Then ask `AskUserQuestion` for:
 7. **"In review" status name** — default `In Review`
 
 Verify by GET-ing `https://<host>/rest/api/3/project/<key>` with basic auth. If 401/404, ask again.
+
+Then confirm a **Blocked** status exists and is reachable from the working statuses (enumerate `GET /rest/api/3/issue/<any-key>/transitions` on a sample issue) — the status-mirrors-work rule requires it as the landing state for timeboxed/unactionable tickets. If the workflow has none, ask the user to add one (Jira workflow edits are admin-side) or to name the closest equivalent, and record the choice.
 
 ## Step 4 — Universal questions
 
@@ -251,7 +255,7 @@ In the **project's** `.claude/settings.local.json` (create if missing, MERGE if 
         ]
       },
       {
-        "matcher": "Bash|<the provider's MCP create-tool names, e.g. mcp__plane__create_work_item|mcp__plane__create_intake_work_item>",
+        "matcher": "Bash|ScheduleWakeup|<the provider's MCP create-tool names, e.g. mcp__plane__create_work_item|mcp__plane__create_intake_work_item>",
         "hooks": [
           { "type": "command", "command": "node <MEM>/hook-loop-guards.mjs" }
         ]
@@ -261,18 +265,29 @@ In the **project's** `.claude/settings.local.json` (create if missing, MERGE if 
 }
 ```
 
-The guards matcher must name the tracker's MCP create tools alongside `Bash`, or guard 4 never sees MCP-route ticket creation. Providers with no MCP tools keep plain `Bash`.
+The guards matcher must name the tracker's MCP create tools alongside `Bash` (or guard 4 never sees MCP-route ticket creation) AND `ScheduleWakeup` (or guard 5, never-self-halt, never fires). Providers with no MCP tools keep `Bash|ScheduleWakeup`.
 
 Pipe-test the guard before moving on — a hook that is installed but never denies is worse than none, because it reads as protection. Write each payload to a FILE and pipe the file: embedding a create-URL inline in your own shell command would trip guard 4 on the test itself.
 
 ```bash
 # must DENY (a subagent backgrounding a gate): agent_id is what marks a subagent
 echo '{"agent_id":"a1","tool_input":{"command":"pnpm test","run_in_background":true}}' | node "$MEM/hook-loop-guards.mjs"
+# must ALSO DENY the bare-runner shapes — these matched NOTHING in an earlier GATE regex, which made
+# the flagship guard silently inert; they are pinned here so a regression is caught at init:
+echo '{"agent_id":"a1","tool_input":{"command":"pytest tests/","run_in_background":true}}' | node "$MEM/hook-loop-guards.mjs"
+echo '{"agent_id":"a1","tool_input":{"command":"go test ./... &"}}' | node "$MEM/hook-loop-guards.mjs"
+echo '{"agent_id":"a1","tool_input":{"command":"npx vitest run","run_in_background":true}}' | node "$MEM/hook-loop-guards.mjs"
 # must ALLOW (the same command in the foreground)
 echo '{"agent_id":"a1","tool_input":{"command":"pnpm test"}}' | node "$MEM/hook-loop-guards.mjs"
 # guard 4, MCP route: must DENY with no fresh stamp, ALLOW right after running find-existing-ticket.py
 echo '{"tool_name":"<mcp create tool>","tool_input":{"name":"t"}}' | node "$MEM/hook-loop-guards.mjs"
 # guard 4 must NOT fire on a comment POST — commenting is the alternative the rule prefers
+# guard 5: must DENY a self-halt with no owner marker, ALLOW with it
+echo '{"tool_name":"ScheduleWakeup","tool_input":{"stop":true}}' | node "$MEM/hook-loop-guards.mjs"
+touch "$MEM/.owner-stop"
+echo '{"tool_name":"ScheduleWakeup","tool_input":{"stop":true}}' | node "$MEM/hook-loop-guards.mjs"
+rm "$MEM/.owner-stop"
+# attribution: must DENY on gh pr create/edit bodies too, not just git commit
 ```
 
 (`<MEM>` expanded to the absolute memory-dir path.) Pipe-test all four before moving on — this is the mechanical half of the `model-effort-routing` rule, and a hook that is installed but silently wrong is worse than none:
@@ -307,7 +322,7 @@ The branch prefix and the way an issue is *named* are separate, because on GitHu
 | `{{ISSUE_REF}}` — commit subject, registry entry, status line | `ABC-<N>` | `#<N>` |
 | `{{ISSUE_LINK_KEYWORD}}` — how the PR body references the issue | `Refs` (any word; the tracker links by key) | **`Refs`, never `Closes`/`Fixes`/`Resolves`** — a closing keyword makes GitHub close the issue on merge, which is the owner's decision, not the loop's |
 
-Every spawned implementation agent reads THIS instead of `MEMORY.md` + `autonomous-loop.md` + the feedback files. Its bytes must stay stable across spawns or the prompt cache misses on every agent — see `feedback/efficiency-levers.md`.
+Every spawned implementation agent reads THIS instead of `MEMORY.md` + `autonomous-loop.md` + the feedback files. Its bytes must stay stable across spawns or the prompt cache misses on every agent — see `feedback/token-hygiene.md`.
 
 ### `usage-rollup.mjs` + `telemetry/` (the append-only spend record)
 
@@ -353,9 +368,9 @@ Render `assets/MEMORY.md.tmpl` substituting project metadata. The index points t
 ### `autonomous-loop.md`
 
 Render `assets/autonomous-loop.md.tmpl`. Placeholders:
-- `{{PROVIDER}}` — `Linear`, `Jira`, or `Plane`
-- `{{READY_STATUS}}` — provider-specific (`Todo` for Linear/Plane, env-var driven for Jira)
-- `{{REVIEW_STATUS}}` — `Ready for Review` for Linear, `In Review` for Plane, env-var driven for Jira
+- `{{PROVIDER}}` — `Linear`, `Jira`, `Plane`, or `GitHub Issues`
+- `{{READY_STATUS}}` — provider-specific (`Todo` for Linear/Plane, env-var driven for Jira, the `READY_LABEL` for GitHub Issues)
+- `{{REVIEW_STATUS}}` — `Ready for Review` for Linear, `In Review` for Plane, env-var driven for Jira, the `IN_REVIEW_LABEL` for GitHub Issues
 - `{{PROJECT_NAME}}`
 
 ### `restart-instructions.md`
@@ -388,7 +403,7 @@ Print a summary:
 
 ```
 ✅ taskloop initialized for <project name>
-   Provider:  <Linear|Jira|Plane>
+   Provider:  <Linear|Jira|Plane|GitHub Issues>
    Strategy:  <auto|fast|balanced|heavy>
    Automerge: <on|off>
    Memory:    ~/.claude/projects/<slug>/memory/
